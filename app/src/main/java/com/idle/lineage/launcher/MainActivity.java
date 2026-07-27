@@ -293,12 +293,31 @@ public class MainActivity extends AppCompatActivity {
         webView.evaluateJavascript(js, null);
     }
 
-    /** 選角／遊戲內備援：右下角綠色「匯出存檔」 */
+    /** 選角／遊戲內備援：右下角綠色「匯出存檔」＋ 遊戲同款 SIG1 簽章 */
     private void injectExportFab(WebView view) {
         String js =
                 "(function(){" +
-                "if(window.__export_fab_added)return;" +
+                "try{var old=document.getElementById('__idle_export_fab');if(old)old.remove();}catch(e){}" +
                 "window.__export_fab_added=true;" +
+
+                "function seedHash(str){" +
+                "  str=String(str);var h=1779033703^str.length;" +
+                "  for(var i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=(h<<13)|(h>>>19);}" +
+                "  h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);" +
+                "  return (h^(h>>>16))>>>0;" +
+                "}" +
+                "var SALT='fb5#9c3a7e1d-save-integrity-salt-do-not-edit#a1b2c3';" +
+                "function signSave(s){" +
+                "  var a=seedHash(SALT+'::'+s);" +
+                "  var b=seedHash(s+'::'+SALT+'::'+a);" +
+                "  return (a>>>0).toString(36)+'.'+(b>>>0).toString(36)+'.'+(s.length).toString(36);" +
+                "}" +
+                "function saveWrap(payload){" +
+                "  payload=String(payload);" +
+                "  if(payload.indexOf('SIG1:')===0||payload.indexOf('SIG2:')===0)return payload;" +
+                "  return 'SIG1:'+signSave(payload)+':'+payload;" +
+                "}" +
+
                 "function send(data,name){" +
                 "  name=name||'idle_save.json';" +
                 "  if(window.AndroidDownloader&&AndroidDownloader.saveBase64File)" +
@@ -306,62 +325,63 @@ public class MainActivity extends AppCompatActivity {
                 "  else if(window.AndroidBridge&&AndroidBridge.saveBase64File)" +
                 "    AndroidBridge.saveBase64File(data,'application/json',name);" +
                 "}" +
+
                 "function listSlots(){" +
                 "  var s=[];" +
                 "  try{" +
                 "    for(var i=0;i<localStorage.length;i++){" +
                 "      var k=localStorage.key(i),v=localStorage.getItem(k)||'';" +
-                "      if(v.length<80)continue;" +
-                "      if(k.indexOf('save')>=0||k.indexOf('char')>=0||k.indexOf('slot')>=0" +
-                "        ||k.indexOf('progress')>=0||k.indexOf('idle')>=0||k.indexOf('player')>=0" +
-                "        ||v.indexOf('SIG1:')===0||v.indexOf('LZ1:')===0" +
+                "      if(v.length<40)continue;" +
+                "      var kl=k.toLowerCase();" +
+                "      if(kl.indexOf('lineage_idle_save')>=0" +
+                "        ||kl.indexOf('lineage_idle_warehouse')>=0" +
+                "        ||kl.indexOf('save')>=0||kl.indexOf('idle')>=0" +
+                "        ||v.indexOf('LZ1:')===0||v.indexOf('SIG1:')===0" +
                 "        ||v.charAt(0)==='{'||v.charAt(0)==='['){" +
-                "        s.push({key:k,label:k+' ('+Math.round(v.length/1024)+'KB)',len:v.length});" +
+                "        s.push({key:k,label:k+' ('+Math.round(v.length/1024)+'KB)'+(v.indexOf('LZ1:')===0?' [LZ1]':''),len:v.length});" +
                 "      }" +
                 "    }" +
                 "    s.sort(function(a,b){return b.len-a.len;});" +
                 "  }catch(e){}" +
                 "  return s;" +
                 "}" +
-                "function doExport(){" +
-                "  var slots=listSlots();" +
-                "  if(!slots.length){" +
-                "    if(window.AndroidBridge&&AndroidBridge.toast)AndroidBridge.toast('找不到存檔欄位');" +
-                "    if(window.AndroidDownloader&&AndroidDownloader.pickSaveSlot)" +
-                "      AndroidDownloader.pickSaveSlot('[]');" +
-                "    else if(window.AndroidBridge&&AndroidBridge.pickSaveSlot)" +
-                "      AndroidBridge.pickSaveSlot('[]');" +
-                "    return;" +
-                "  }" +
-                "  if(window.AndroidDownloader&&AndroidDownloader.pickSaveSlot){" +
-                "    AndroidDownloader.pickSaveSlot(JSON.stringify(slots));" +
-                "    return;" +
-                "  }" +
-                "  if(window.AndroidBridge&&AndroidBridge.pickSaveSlot){" +
-                "    AndroidBridge.pickSaveSlot(JSON.stringify(slots));" +
-                "    return;" +
-                "  }" +
-                "  var key=slots[0].key;" +
-                "  var val=localStorage.getItem(key);" +
-                "  var data='data:application/json;base64,'+btoa(unescape(encodeURIComponent(val)));" +
-                "  send(data,key+'.json');" +
-                "}" +
+
                 "window.__exportSlotByKey=function(key){" +
                 "  try{" +
                 "    var val=localStorage.getItem(key);" +
                 "    if(val==null){if(window.AndroidBridge)AndroidBridge.toast('找不到:'+key);return;}" +
-                "    var data='data:application/json;base64,'+btoa(unescape(encodeURIComponent(val)));" +
+                "    var wrapped=saveWrap(val);" +
+                "    var data='data:application/json;base64,'+btoa(unescape(encodeURIComponent(wrapped)));" +
                 "    send(data,key+'.json');" +
-                "  }catch(e){if(window.AndroidBridge)AndroidBridge.toast('匯出失敗');}" +
+                "  }catch(e){if(window.AndroidBridge)AndroidBridge.toast('匯出失敗:'+e);}" +
                 "};" +
+
+                "function doExport(){" +
+                "  if(window.AndroidBridge&&AndroidBridge.toast)AndroidBridge.toast('正在掃描存檔…');" +
+                "  var slots=listSlots();" +
+                "  if(!slots.length){" +
+                "    if(window.AndroidBridge&&AndroidBridge.toast)AndroidBridge.toast('找不到存檔欄位');" +
+                "    if(window.AndroidDownloader&&AndroidDownloader.pickSaveSlot)AndroidDownloader.pickSaveSlot('[]');" +
+                "    else if(window.AndroidBridge&&AndroidBridge.pickSaveSlot)AndroidBridge.pickSaveSlot('[]');" +
+                "    return;" +
+                "  }" +
+                "  if(window.AndroidDownloader&&AndroidDownloader.pickSaveSlot)" +
+                "    AndroidDownloader.pickSaveSlot(JSON.stringify(slots));" +
+                "  else if(window.AndroidBridge&&AndroidBridge.pickSaveSlot)" +
+                "    AndroidBridge.pickSaveSlot(JSON.stringify(slots));" +
+                "  else window.__exportSlotByKey(slots[0].key);" +
+                "}" +
+
                 "window.__listSaveSlots=function(){return JSON.stringify(listSlots());};" +
                 "window.__dumpStorage=function(){var d={};try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);var v=localStorage.getItem(k);d[k]=v&&v.length>500?v.slice(0,500)+'…(len='+v.length+')':v;}}catch(e){d.error=String(e);}return JSON.stringify(d,null,2);};" +
                 "window.__markExported=function(){};" +
+
                 "var btn=document.createElement('button');" +
+                "btn.id='__idle_export_fab';" +
                 "btn.textContent='匯出存檔';" +
                 "btn.style.cssText='position:fixed;right:12px;bottom:80px;z-index:2147483647;" +
-                "padding:10px 14px;border:none;border-radius:20px;background:#28a745;color:#fff;" +
-                "font-size:14px;font-weight:bold;box-shadow:0 4px 12px rgba(0,0,0,.35);';" +
+                "padding:12px 16px;border:none;border-radius:24px;background:#28a745;color:#fff;" +
+                "font-size:15px;font-weight:bold;box-shadow:0 4px 14px rgba(0,0,0,.4);';" +
                 "btn.onclick=function(e){e.preventDefault();e.stopPropagation();doExport();};" +
                 "function attach(){if(document.body)document.body.appendChild(btn);else setTimeout(attach,200);}" +
                 "attach();" +
@@ -673,7 +693,7 @@ public class MainActivity extends AppCompatActivity {
     private String buildSaveFileName(String rawName, byte[] bytes) {
         String base = rawName == null ? "" : rawName.trim();
         base = base.replaceAll("(?i)\\.(json|txt|sav|dat|bin)$", "").trim();
-        if (base.matches("(?i)(idle[_-]?lineage[_-]?save|save|savefile|download|downloadfile|export|progress|存檔|下載|進度|未命名|fable5_save_\\d+)?")) {
+        if (base.matches("(?i)(idle[_-]?lineage[_-]?save|save|savefile|download|downloadfile|export|progress|存檔|下載|進度|未命名|fable5_save_\\d+|lineage_idle_save_\\d+)?")) {
             base = "";
         }
         if (base.isEmpty()) base = extractCharInfo(bytes);
@@ -719,6 +739,8 @@ public class MainActivity extends AppCompatActivity {
                 if (colon >= 0) body = body.substring(colon + 1).trim();
                 if (body.startsWith("{") || body.startsWith("[")) {
                     probe = body;
+                } else if (body.startsWith("LZ1:")) {
+                    return "";
                 } else {
                     String b64 = body.split("[.|,;\\s]")[0];
                     try {
