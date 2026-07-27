@@ -84,7 +84,6 @@ public class MainActivity extends AppCompatActivity {
             runOnUiThread(() -> processAndSaveFile(dataUrlOrBase64, mimeType, fileName));
         }
 
-        /** 兩參數備援（部分腳本只傳 base64 + 檔名） */
         @JavascriptInterface
         @Keep
         public void saveBase64FileLegacy(String base64Data, String fileName) {
@@ -202,6 +201,7 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     injectBuiltinSaveHook(view);
                 }
+                injectExportFab(view);
             }
 
             @Override
@@ -219,7 +219,6 @@ public class MainActivity extends AppCompatActivity {
                     if (injectPluginsEnabled) {
                         injectPlugins(view);
                         injectTMEngine(view);
-                        // 外掛載入後再補一次 Hook，避免被覆蓋
                         mainHandler.postDelayed(() -> injectSaveHooks(view), 1500);
                     } else {
                         Log.d(TAG, "純淨模式：跳過外掛與 TMEngine");
@@ -263,7 +262,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /** 把 blob: 讀成 data URL 再交給 processAndSaveFile */
     private void triggerBlobExport(String blobUrl) {
         runOnUiThread(() -> Toast.makeText(this, "正在處理匯出…", Toast.LENGTH_SHORT).show());
         String js =
@@ -295,7 +293,81 @@ public class MainActivity extends AppCompatActivity {
         webView.evaluateJavascript(js, null);
     }
 
-    /* ==================== 啟動頁 ==================== */
+    /** 選角／遊戲內備援：右下角綠色「匯出存檔」 */
+    private void injectExportFab(WebView view) {
+        String js =
+                "(function(){" +
+                "if(window.__export_fab_added)return;" +
+                "window.__export_fab_added=true;" +
+                "function send(data,name){" +
+                "  name=name||'idle_save.json';" +
+                "  if(window.AndroidDownloader&&AndroidDownloader.saveBase64File)" +
+                "    AndroidDownloader.saveBase64File(data,'application/json',name);" +
+                "  else if(window.AndroidBridge&&AndroidBridge.saveBase64File)" +
+                "    AndroidBridge.saveBase64File(data,'application/json',name);" +
+                "}" +
+                "function listSlots(){" +
+                "  var s=[];" +
+                "  try{" +
+                "    for(var i=0;i<localStorage.length;i++){" +
+                "      var k=localStorage.key(i),v=localStorage.getItem(k)||'';" +
+                "      if(v.length<80)continue;" +
+                "      if(k.indexOf('save')>=0||k.indexOf('char')>=0||k.indexOf('slot')>=0" +
+                "        ||k.indexOf('progress')>=0||k.indexOf('idle')>=0||k.indexOf('player')>=0" +
+                "        ||v.indexOf('SIG1:')===0||v.indexOf('LZ1:')===0" +
+                "        ||v.charAt(0)==='{'||v.charAt(0)==='['){" +
+                "        s.push({key:k,label:k+' ('+Math.round(v.length/1024)+'KB)',len:v.length});" +
+                "      }" +
+                "    }" +
+                "    s.sort(function(a,b){return b.len-a.len;});" +
+                "  }catch(e){}" +
+                "  return s;" +
+                "}" +
+                "function doExport(){" +
+                "  var slots=listSlots();" +
+                "  if(!slots.length){" +
+                "    if(window.AndroidBridge&&AndroidBridge.toast)AndroidBridge.toast('找不到存檔欄位');" +
+                "    if(window.AndroidDownloader&&AndroidDownloader.pickSaveSlot)" +
+                "      AndroidDownloader.pickSaveSlot('[]');" +
+                "    else if(window.AndroidBridge&&AndroidBridge.pickSaveSlot)" +
+                "      AndroidBridge.pickSaveSlot('[]');" +
+                "    return;" +
+                "  }" +
+                "  if(window.AndroidDownloader&&AndroidDownloader.pickSaveSlot){" +
+                "    AndroidDownloader.pickSaveSlot(JSON.stringify(slots));" +
+                "    return;" +
+                "  }" +
+                "  if(window.AndroidBridge&&AndroidBridge.pickSaveSlot){" +
+                "    AndroidBridge.pickSaveSlot(JSON.stringify(slots));" +
+                "    return;" +
+                "  }" +
+                "  var key=slots[0].key;" +
+                "  var val=localStorage.getItem(key);" +
+                "  var data='data:application/json;base64,'+btoa(unescape(encodeURIComponent(val)));" +
+                "  send(data,key+'.json');" +
+                "}" +
+                "window.__exportSlotByKey=function(key){" +
+                "  try{" +
+                "    var val=localStorage.getItem(key);" +
+                "    if(val==null){if(window.AndroidBridge)AndroidBridge.toast('找不到:'+key);return;}" +
+                "    var data='data:application/json;base64,'+btoa(unescape(encodeURIComponent(val)));" +
+                "    send(data,key+'.json');" +
+                "  }catch(e){if(window.AndroidBridge)AndroidBridge.toast('匯出失敗');}" +
+                "};" +
+                "window.__listSaveSlots=function(){return JSON.stringify(listSlots());};" +
+                "window.__dumpStorage=function(){var d={};try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);var v=localStorage.getItem(k);d[k]=v&&v.length>500?v.slice(0,500)+'…(len='+v.length+')':v;}}catch(e){d.error=String(e);}return JSON.stringify(d,null,2);};" +
+                "window.__markExported=function(){};" +
+                "var btn=document.createElement('button');" +
+                "btn.textContent='匯出存檔';" +
+                "btn.style.cssText='position:fixed;right:12px;bottom:80px;z-index:2147483647;" +
+                "padding:10px 14px;border:none;border-radius:20px;background:#28a745;color:#fff;" +
+                "font-size:14px;font-weight:bold;box-shadow:0 4px 12px rgba(0,0,0,.35);';" +
+                "btn.onclick=function(e){e.preventDefault();e.stopPropagation();doExport();};" +
+                "function attach(){if(document.body)document.body.appendChild(btn);else setTimeout(attach,200);}" +
+                "attach();" +
+                "})();";
+        view.evaluateJavascript(js, null);
+    }
 
     private void loadNativeLauncherHtml() {
         String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
@@ -322,7 +394,7 @@ public class MainActivity extends AppCompatActivity {
                 "</select>" +
                 "<button class='btn' onclick='start(true)'>🚀 啟動（含外掛 + 防斷線）</button>" +
                 "<button class='btn btn-pure' onclick='start(false)'>純淨啟動（無外掛）</button>" +
-                "<div class='hint'>兩種模式都支援存檔匯出／匯入。<br>純淨模式不注入任何外掛與 TMEngine。</div>" +
+                "<div class='hint'>兩種模式都支援存檔匯出／匯入。<br>選角畫面右下角有綠色「匯出存檔」按鈕。</div>" +
                 "</div>" +
                 "<script>" +
                 "function start(withPlugin){" +
@@ -332,8 +404,6 @@ public class MainActivity extends AppCompatActivity {
                 "</script></body></html>";
         webView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null);
     }
-
-    /* ==================== 外掛 / TMEngine ==================== */
 
     private void injectPlugins(WebView view) {
         String js = "(function(){" +
@@ -410,7 +480,6 @@ public class MainActivity extends AppCompatActivity {
         view.evaluateJavascript(js, null);
     }
 
-    /** 強化內建 SaveHook（無 assets/save_hook.js 時使用） */
     private void injectBuiltinSaveHook(WebView view) {
         String js = "(function(){" +
                 "if(window.__IDLE_SAVE_HOOK_LOADED__)return;" +
@@ -453,16 +522,6 @@ public class MainActivity extends AppCompatActivity {
                 "    }).catch(function(){});}" +
                 "  }" +
                 "},true);" +
-                "window.__markExported=function(){};" +
-                "window.__dumpStorage=function(){var d={};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);d[k]=localStorage.getItem(k);}return JSON.stringify(d);};" +
-                "window.__listSaveSlots=function(){var s=[];try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i),v=localStorage.getItem(k)||'';" +
-                "if(k.indexOf('save')>=0||k.indexOf('char')>=0||k.indexOf('slot')>=0||v.indexOf('SIG1:')>=0||v.indexOf('LZ1:')>=0||(v.length>200&&v.charAt(0)=='{'))" +
-                "s.push({key:k,label:k+' ('+Math.round(v.length/1024)+'KB)'});}}catch(e){}return JSON.stringify(s);};" +
-                "window.__exportSlotByKey=function(key){try{var val=localStorage.getItem(key);if(val==null)return;" +
-                "var data='data:application/json;base64,'+btoa(unescape(encodeURIComponent(val)));send(data,(key||'slot')+'.json');}catch(e){}};" +
-                "window.__offerExportMenu=function(){try{var j=window.__listSaveSlots();" +
-                "if(window.AndroidDownloader&&AndroidDownloader.pickSaveSlot)AndroidDownloader.pickSaveSlot(j);" +
-                "else if(window.AndroidBridge&&AndroidBridge.pickSaveSlot)AndroidBridge.pickSaveSlot(j);}catch(e){}};" +
                 "})();";
         view.evaluateJavascript(js, null);
     }
@@ -483,12 +542,9 @@ public class MainActivity extends AppCompatActivity {
         return saveHookJs;
     }
 
-    /* ==================== 存檔核心 ==================== */
-
     private void processAndSaveFile(String dataUrlOrBase64, String mimeType, String fileName) {
         if (dataUrlOrBase64 == null || dataUrlOrBase64.isEmpty()) return;
         if (dataUrlOrBase64.startsWith("blob:")) {
-            Log.w(TAG, "blob: 無法在 Java 端讀取，改走 triggerBlobExport");
             triggerBlobExport(dataUrlOrBase64);
             return;
         }
@@ -741,7 +797,7 @@ public class MainActivity extends AppCompatActivity {
             if (arr.length() == 0) {
                 new AlertDialog.Builder(this)
                         .setTitle("找不到任何存檔")
-                        .setMessage("網頁端沒有回報存檔欄位。可按「診斷」倒出 localStorage。")
+                        .setMessage("localStorage 沒有符合的存檔欄位。可按「診斷」倒出內容。")
                         .setPositiveButton("關閉", null)
                         .setNeutralButton("🔍 診斷", (d, w) -> dumpStorageDiagnostics())
                         .show();
