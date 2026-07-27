@@ -14,7 +14,7 @@
 
     // 動態加載防斷線與自動化模組
     const modules = [
-        "https://raw.githubusercontent.com/0047946-ops/game-launcher/main/save_hook.js"
+        "https://raw.githubusercontent.com/0047946-ops/game-launchers/main/save_hook.js"
     ];
 
     modules.forEach(url => {
