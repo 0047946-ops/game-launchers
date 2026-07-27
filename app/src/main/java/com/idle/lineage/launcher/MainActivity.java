@@ -1279,16 +1279,28 @@ public class MainActivity extends AppCompatActivity {
                 "  <button class='btn-export' onclick='exportSaves()'>💾 智慧匯出存檔（掃描 localStorage）</button>" +
                 "</div>" +
                 "<script>" +
+                "const SLOT_KEYS = ['afk-lzcache-save','idle-lineage-save','save','savefile','gameData','progress'];" +
                 "function launchGame(){" +
                 "  var url = document.getElementById('serverSelect').value;" +
                 "  location.href = url;" +
                 "}" +
                 "function exportSaves(){" +
+                "  let found = false;" +
+                "  for(let i=0; i<localStorage.length; i++){" +
+                "    let k = localStorage.key(i);" +
+                "    if(SLOT_KEYS.some(sk => k.includes(sk)) || k.includes('save') || k.includes('idle')) {" +
+                "      found = true; break;" +
+                "    }" +
+                "  }" +
                 "  if(typeof window.checkLocalStorage === 'function'){" +
                 "    window.checkLocalStorage();" +
                 "    if(window.AndroidBridge) window.AndroidBridge.toast('正在掃描存檔...');" +
-                "  }else{" +
-                "    alert('存檔攔截模組尚未載入，請確認 Hook 是否正確注入。');" +
+                "  } else {" +
+                "    if(found) {" +
+                "      if(window.AndroidBridge) window.AndroidBridge.toast('已在本機發現存檔，請先啟動遊戲載入頁面');" +
+                "    } else {" +
+                "      alert('目前本機 localStorage 尚無遊戲存檔，請先進入遊戲遊玩或匯入存檔。');" +
+                "    }" +
                 "  }" +
                 "}" +
                 "</script>" +
