@@ -10,8 +10,11 @@ import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Base64;
 import android.util.Log;
+import android.webkit.ConsoleMessage;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.JsPromptResult;
+import android.webkit.JsResult;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -42,6 +45,9 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "GameLauncher";
     private static final String SAVE_NAME_PREFIX = "";
+
+    /** 目前是否注入外掛（由啟動頁選擇決定） */
+    private boolean injectPluginsEnabled = true;
 
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
@@ -89,6 +95,12 @@ public class MainActivity extends AppCompatActivity {
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
+            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
+                Log.d(TAG, "[JS] " + consoleMessage.message());
+                return true;
+            }
+
+            @Override
             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback,
                                              FileChooserParams fileChooserParams) {
                 if (MainActivity.this.filePathCallback != null) {
@@ -103,6 +115,29 @@ public class MainActivity extends AppCompatActivity {
                     return false;
                 }
                 return true;
+            }
+
+            /** 攔截 prompt 裡的 SIG1 存檔訊號 */
+            @Override
+            public boolean onJsPrompt(WebView view, String url, String message, String defaultValue, JsPromptResult result) {
+                String content = (defaultValue != null && !defaultValue.isEmpty()) ? defaultValue : message;
+                if (content != null && content.contains("SIG1:")) {
+                    processAndSaveFile(content, "application/json", null);
+                    result.confirm();
+                    return true;
+                }
+                return super.onJsPrompt(view, url, message, defaultValue, result);
+            }
+
+            /** 攔截 alert 裡的 SIG1 存檔訊號 */
+            @Override
+            public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
+                if (message != null && message.contains("SIG1:")) {
+                    processAndSaveFile(message, "application/json", null);
+                    result.confirm();
+                    return true;
+                }
+                return super.onJsAlert(view, url, message, result);
             }
         });
 
@@ -124,11 +159,27 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (url != null && url.startsWith("http")) {
-                    injectPlugins(view);
-                    injectTMEngine(view);
-                    injectFixImport(view);
+                if (url == null) return;
+
+                // 所有頁面都注入：存檔修復 + 存檔攔截
+                injectFixImport(view);
+                injectSaveHook(view);
+
+                // 只有真正的遊戲頁才注入外掛 / 防斷線
+                if (url.startsWith("http") && !url.contains("android_asset")) {
+                    if (injectPluginsEnabled) {
+                        injectPlugins(view);
+                        injectTMEngine(view);
+                    } else {
+                        Log.d(TAG, "純淨模式：不注入外掛");
+                    }
                 }
+            }
+
+            @Override
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                Toast.makeText(MainActivity.this,
+                        "⚠️ 連線失敗 (" + errorCode + ")，請確認網路", Toast.LENGTH_LONG).show();
             }
         });
 
@@ -142,32 +193,49 @@ public class MainActivity extends AppCompatActivity {
                 suggested = URLUtil.guessFileName(url, contentDisposition, mimetype);
             } catch (Exception ignored) {}
             final String hint = suggested;
-            runOnUiThread(() -> processAndSaveFile(url, mimetype != null ? mimetype : "application/json", hint));
+            runOnUiThread(() -> processAndSaveFile(url,
+                    mimetype != null ? mimetype : "application/json", hint));
         });
     }
 
-    /* ==================== 啟動器頁面 ==================== */
+    /* ==================== 啟動器頁面（含純淨版） ==================== */
 
     private void loadLauncherPage() {
         String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
                 "<meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
                 "<style>" +
-                "body{background:#121212;color:#fff;font-family:sans-serif;padding:20px;display:flex;justify-content:center;align-items:center;min-height:90vh;margin:0;}" +
+                "body{background:#121212;color:#fff;font-family:sans-serif;padding:20px;" +
+                "display:flex;justify-content:center;align-items:center;min-height:90vh;margin:0;}" +
                 ".card{background:#1e1e1e;border-radius:16px;padding:24px;width:100%;max-width:380px;text-align:center;}" +
                 "h2{font-size:20px;margin-bottom:8px;}" +
                 ".subtitle{color:#8e8e93;font-size:13px;margin-bottom:24px;}" +
-                "select{width:100%;padding:12px;background:#2c2c2e;color:#fff;border:1px solid #3a3a3c;border-radius:8px;font-size:15px;margin-bottom:24px;}" +
-                ".btn{width:100%;padding:14px;background:#28a745;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;}" +
+                "select{width:100%;padding:12px;background:#2c2c2e;color:#fff;border:1px solid #3a3a3c;" +
+                "border-radius:8px;font-size:15px;margin-bottom:16px;}" +
+                ".btn{width:100%;padding:14px;background:#28a745;color:#fff;border:none;" +
+                "border-radius:8px;font-size:16px;font-weight:bold;margin-top:8px;}" +
+                ".btn-pure{background:#6c757d;}" +
+                ".hint{color:#aaa;font-size:12px;margin-top:12px;line-height:1.4;}" +
                 "</style></head><body>" +
                 "<div class='card'>" +
                 "<h2>放置天堂啟動器</h2>" +
-                "<div class='subtitle'>多伺服器 + 自動外掛注入</div>" +
+                "<div class='subtitle'>多伺服器 + 可選外掛注入</div>" +
                 "<select id='serverSelect'>" +
-                "<option value='https://pp771007.github.io/idle-lineage-class/'>伺服器一 (加掛版)</option>" +
-                "<option value='https://shines871.github.io/idle-lineage-class/'>伺服器二 (原版)</option>" +
+                "<option value='https://pp771007.github.io/idle-lineage-class/'>伺服器一（加掛版）</option>" +
+                "<option value='https://shines871.github.io/idle-lineage-class/'>伺服器二（原版）</option>" +
                 "</select>" +
-                "<button class='btn' onclick='location.href=document.getElementById(\"serverSelect\").value'>啟動遊戲</button>" +
-                "</div></body></html>";
+                "<button class='btn' onclick='start(true)'>🚀 啟動（含外掛）</button>" +
+                "<button class='btn btn-pure' onclick='start(false)'>純淨啟動（無外掛）</button>" +
+                "<div class='hint'>純淨模式只開遊戲本體，不注入任何外掛與防斷線引擎。<br>存檔匯出／匯入功能兩種模式都可用。</div>" +
+                "</div>" +
+                "<script>" +
+                "function start(withPlugin){" +
+                "  var url=document.getElementById('serverSelect').value;" +
+                "  if(window.AndroidBridge && AndroidBridge.setPluginMode){" +
+                "    AndroidBridge.setPluginMode(withPlugin);" +
+                "  }" +
+                "  location.href=url;" +
+                "}" +
+                "</script></body></html>";
         webView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null);
     }
 
@@ -182,23 +250,124 @@ public class MainActivity extends AppCompatActivity {
                 "document.body.appendChild(s0);" +
                 "const b='https://kid0924.github.io/idle-lineage-class/';" +
                 "const t=window.location.hostname.includes('pp771007');" +
-                "const c=['klh_initial.js','klh_GMShop.js','klh_mobile-perf.js','klh_perf-monitor.js','klh_Backpack.js','klh_pk.js','klh_Pandora.js'].map(x=>b+x);" +
-                "const n=t?[...[b+'klh_remove-banner.js'],...c]:[...['https://pp771007.github.io/idle-lineage-class/afk-lzcache.js','https://pp771007.github.io/idle-lineage-class/afk-offline.js'],...c];" +
-                "function load(src){return new Promise((res,rej)=>{var o=document.createElement('script');o.src=src+'?v='+Date.now();o.onload=res;o.onerror=()=>rej(src);document.body.appendChild(o);});}" +
+                "const c=['klh_initial.js','klh_GMShop.js','klh_mobile-perf.js','klh_perf-monitor.js'," +
+                "'klh_Backpack.js','klh_pk.js','klh_Pandora.js'].map(x=>b+x);" +
+                "const n=t?[...[b+'klh_remove-banner.js'],...c]:" +
+                "[...['https://pp771007.github.io/idle-lineage-class/afk-lzcache.js'," +
+                "'https://pp771007.github.io/idle-lineage-class/afk-offline.js'],...c];" +
+                "function load(src){return new Promise((res,rej)=>{" +
+                "var o=document.createElement('script');o.src=src+'?v='+Date.now();" +
+                "o.onload=res;o.onerror=()=>rej(src);document.body.appendChild(o);});}" +
                 "n.reduce((p,src)=>p.then(()=>load(src)),Promise.resolve())" +
-                ".then(()=>console.log('外掛注入完成'))" +
-                ".catch(e=>console.error('外掛載入失敗',e));" +
+                ".then(()=>console.log('[Launcher] 外掛注入完成'))" +
+                ".catch(e=>console.error('[Launcher] 外掛載入失敗',e));" +
                 "})();";
         view.evaluateJavascript(js, null);
     }
 
+    /** TMEngine 防斷線引擎（完整版，從舊專案移植） */
     private void injectTMEngine(WebView view) {
-        // 此處保留您原本完整的 TMEngine 字串即可
-        // 為避免回覆過長，請將您舊專案中的 tmEngineJs 完整貼入
-        String tmEngineJs = "(function(){if(window.__tm_engine_loaded)return;window.__tm_engine_loaded=true;console.log('TMEngine 已載入');})();";
+        String tmEngineJs = "(function(){" +
+                "'use strict';" +
+                "if(window.__tm_engine_loaded)return;" +
+                "window.__tm_engine_loaded=true;" +
+                "console.log('[TMEngine] 啟動');" +
+
+                "const PerformanceCore={" +
+                "initTuning:()=>{" +
+                "if(typeof window.requestIdleCallback!=='undefined'){" +
+                "window.requestIdleCallback(()=>{if(window.gc)window.gc();},{timeout:500});" +
+                "}}," +
+                "getJitter:(base,variance)=>base+Math.floor(Math.random()*variance)" +
+                "};" +
+                "PerformanceCore.initTuning();" +
+
+                "const originalSetInterval=window.setInterval;" +
+                "window.setInterval=function(callback,delay,...args){" +
+                "const optimizedDelay=delay<150?150:delay;" +
+                "return originalSetInterval(callback,optimizedDelay,...args);" +
+                "};" +
+
+                "const NetworkOptimizer={" +
+                "_isMobile:false," +
+                "detectEnvironment:async()=>{" +
+                "const conn=navigator.connection||{};" +
+                "NetworkOptimizer._isMobile=conn.type==='cellular'||/Android|webOS|iPhone|iPad/i.test(navigator.userAgent);" +
+                "try{const start=Date.now();" +
+                "await fetch(window.location.href,{method:'HEAD',cache:'no-cache'});" +
+                "if(Date.now()-start>150)NetworkOptimizer._isMobile=true;}catch(e){}" +
+                "}," +
+                "getJitterParams:()=>NetworkOptimizer._isMobile?{base:500,variance:700}:{base:120,variance:250}" +
+                "};" +
+
+                "const DOMWatcher={" +
+                "waitForEl:(selector,success)=>{" +
+                "const el=document.querySelector(selector);" +
+                "if(el){success(el);return;}" +
+                "const obs=new MutationObserver((m,o)=>{" +
+                "const t=document.querySelector(selector);if(t){o.disconnect();success(t);}});" +
+                "if(document.body)obs.observe(document.body,{childList:true,subtree:true});" +
+                "else document.addEventListener('DOMContentLoaded',()=>obs.observe(document.body,{childList:true,subtree:true}));" +
+                "}};" +
+
+                "window.executeLogic=function(){" +
+                "const hpText=document.querySelector('.hp-text')?.innerText;" +
+                "if(hpText){const [cur,max]=hpText.split('/').map(Number);" +
+                "if(cur/max<0.75){const potionBtn=document.querySelector('#btn-use-potion')||document.querySelector('.potion-btn');" +
+                "if(potionBtn)potionBtn.click();}}" +
+                "const attackBtn=document.querySelector('.attack-btn');" +
+                "if(attackBtn&&!attackBtn.classList.contains('cooldown')){" +
+                "const {base,variance}=NetworkOptimizer.getJitterParams();" +
+                "setTimeout(()=>attackBtn.click(),PerformanceCore.getJitter(base,variance));}" +
+                "};" +
+
+                "const PageVisibilityModule={init:()=>{" +
+                "document.addEventListener('visibilitychange',()=>{" +
+                "if(!document.hidden&&typeof window.executeLogic==='function')window.executeLogic();});}};" +
+
+                "const HeartbeatModule={sendKeepAliveSignal:()=>{" +
+                "if(window.socket&&window.socket.readyState===WebSocket.OPEN){" +
+                "window.socket.send(JSON.stringify({type:'heartbeat',timestamp:Date.now()}));" +
+                "}else{fetch(window.location.href,{method:'HEAD',cache:'no-cache',keepalive:true}).catch(()=>{});}}};" +
+
+                "const WebWorkerModule={init:()=>{" +
+                "if(!window.Worker)return;" +
+                "const workerCode=`let intervalId=null;self.onmessage=function(e){" +
+                "if(e.data==='start'){if(intervalId)clearInterval(intervalId);" +
+                "intervalId=setInterval(()=>self.postMessage('ping'),1000);}" +
+                "else if(e.data==='stop'){if(intervalId)clearInterval(intervalId);}};`;" +
+                "const blob=new Blob([workerCode],{type:'application/javascript'});" +
+                "const worker=new Worker(URL.createObjectURL(blob));" +
+                "worker.postMessage('start');" +
+                "worker.onmessage=function(e){if(e.data==='ping')HeartbeatModule.sendKeepAliveSignal();};}};" +
+
+                "const AudioKeepAliveModule={silentAudioCtx:null,init:()=>{" +
+                "try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;" +
+                "AudioKeepAliveModule.silentAudioCtx=new AC();" +
+                "const osc=AudioKeepAliveModule.silentAudioCtx.createOscillator();" +
+                "const gain=AudioKeepAliveModule.silentAudioCtx.createGain();gain.gain.value=0.0001;" +
+                "osc.connect(gain);gain.connect(AudioKeepAliveModule.silentAudioCtx.destination);osc.start();" +
+                "document.addEventListener('visibilitychange',()=>{" +
+                "if(AudioKeepAliveModule.silentAudioCtx&&AudioKeepAliveModule.silentAudioCtx.state==='suspended')" +
+                "AudioKeepAliveModule.silentAudioCtx.resume();});}catch(e){}}};" +
+
+                "const initSystem=async()=>{" +
+                "await NetworkOptimizer.detectEnvironment();" +
+                "PageVisibilityModule.init();WebWorkerModule.init();AudioKeepAliveModule.init();" +
+                "const div=document.createElement('div');" +
+                "div.style='position:fixed;top:10px;left:10px;background:rgba(0,0,0,0.85);color:#0f0;" +
+                "padding:8px 10px;z-index:2147483647;border-radius:8px;font-size:11px;border:1px solid #0f0;pointer-events:none;';" +
+                "div.innerHTML='【TMEngine】防斷線運行中 · '+(NetworkOptimizer._isMobile?'手機模式':'WIFI模式');" +
+                "const attach=()=>{if(document.body)document.body.appendChild(div);else setTimeout(attach,100);};" +
+                "attach();" +
+                "DOMWatcher.waitForEl('.attack-btn',()=>{setInterval(window.executeLogic,250);});" +
+                "};" +
+                "initSystem();" +
+                "})();";
         view.evaluateJavascript(tmEngineJs, null);
     }
 
+    /** 存檔匯入相容修復 */
     private void injectFixImport(WebView view) {
         String js = "(function(){" +
                 "if(window.__fix_import_active)return;" +
@@ -217,7 +386,35 @@ public class MainActivity extends AppCompatActivity {
         view.evaluateJavascript(js, null);
     }
 
-    /* ==================== 存檔核心（朋友強化版） ==================== */
+    /** 存檔攔截 Hook（攔截 Blob / createObjectURL） */
+    private void injectSaveHook(WebView view) {
+        String js = "(function(){" +
+                "if(window.__IDLE_SAVE_HOOK_LOADED__)return;" +
+                "window.__IDLE_SAVE_HOOK_LOADED__=true;" +
+                "console.log('[SaveHook] 已注入');" +
+                "var origCreate=URL.createObjectURL;" +
+                "URL.createObjectURL=function(blob){" +
+                "var url=origCreate.apply(this,arguments);" +
+                "if(blob&&(blob.type.indexOf('json')>=0||blob.type.indexOf('text')>=0||blob.type.indexOf('octet-stream')>=0)){" +
+                "var reader=new FileReader();" +
+                "reader.onloadend=function(){" +
+                "if(window.AndroidBridge&&AndroidBridge.saveBase64File){" +
+                "AndroidBridge.saveBase64File(reader.result,'application/json','idle_save.json');" +
+                "}};" +
+                "reader.readAsDataURL(blob);" +
+                "}" +
+                "return url;" +
+                "};" +
+                "window.__dumpAllLocalStorage=function(){" +
+                "var dump={};for(var i=0;i<localStorage.length;i++){" +
+                "var k=localStorage.key(i);dump[k]=localStorage.getItem(k);}" +
+                "return JSON.stringify(dump);};" +
+                "window.__markExported=function(){console.log('[SaveHook] 已標記匯出完成');};" +
+                "})();";
+        view.evaluateJavascript(js, null);
+    }
+
+    /* ==================== 存檔核心 ==================== */
 
     private void processAndSaveFile(String data, String mimeType, String fileName) {
         if (data == null || data.isEmpty() || data.startsWith("blob:")) return;
@@ -233,9 +430,9 @@ public class MainActivity extends AppCompatActivity {
                 if (idx != -1) {
                     String header = data.substring(0, idx);
                     String content = data.substring(idx + 1);
-                    bytes = header.contains(";base64") ?
-                            Base64.decode(content, Base64.DEFAULT) :
-                            URLDecoder.decode(content, "UTF-8").getBytes(StandardCharsets.UTF_8);
+                    bytes = header.contains(";base64")
+                            ? Base64.decode(content, Base64.DEFAULT)
+                            : URLDecoder.decode(content, "UTF-8").getBytes(StandardCharsets.UTF_8);
                 } else {
                     bytes = data.getBytes(StandardCharsets.UTF_8);
                 }
@@ -252,6 +449,7 @@ public class MainActivity extends AppCompatActivity {
             fileName = buildSaveFileName(fileName, bytes);
             if (writeToDownloads(bytes, fileName)) {
                 Toast.makeText(this, "✅ 已匯出：" + fileName, Toast.LENGTH_LONG).show();
+                notifyJsExported();
             } else {
                 saveViaSAF(bytes, fileName);
             }
@@ -299,6 +497,14 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void notifyJsExported() {
+        runOnUiThread(() -> {
+            try {
+                webView.evaluateJavascript("window.__markExported && window.__markExported();", null);
+            } catch (Exception ignored) {}
+        });
+    }
+
     private void saveViaSAF(byte[] bytes, String fileName) {
         pendingSaveBytes = bytes;
         pendingSaveFileName = fileName;
@@ -332,10 +538,12 @@ public class MainActivity extends AppCompatActivity {
 
     private String buildSaveFileName(String rawName, byte[] bytes) {
         String base = rawName == null ? "" : rawName.replaceAll("(?i)\\.(json|txt|sav)$", "").trim();
-        if (base.isEmpty() || base.matches("(?i)(save|download|export|存檔|下載).*")) {
+        if (base.isEmpty() || base.matches("(?i)(save|download|export|存檔|下載|idle[_-]?lineage).*")) {
             base = extractCharInfo(bytes);
         }
-        if (base.isEmpty()) base = "存檔_" + new SimpleDateFormat("yyyyMMdd-HHmm", Locale.TAIWAN).format(new Date());
+        if (base.isEmpty()) {
+            base = "存檔_" + new SimpleDateFormat("yyyyMMdd-HHmm", Locale.TAIWAN).format(new Date());
+        }
         if (!SAVE_NAME_PREFIX.isEmpty()) base = SAVE_NAME_PREFIX + "_" + base;
         return base.replaceAll("[\\\\/:*?\"<>|]", "_") + ".json";
     }
@@ -354,7 +562,6 @@ public class MainActivity extends AppCompatActivity {
             String level = levelM.find() ? levelM.group(1) : "";
             Matcher classM = Pattern.compile("\"(?:cls|class|className|job)\"\\s*:\\s*\"?([^\"\\s,]{1,12})\"?").matcher(text);
             String cls = classM.find() ? classM.group(1) : "";
-            // 簡易職業對照可再擴充
             if (!level.isEmpty() || !cls.isEmpty()) {
                 return (level.isEmpty() ? "" : level + "等") + cls;
             }
@@ -365,13 +572,12 @@ public class MainActivity extends AppCompatActivity {
     private void triggerBlobDownload(String blobUrl) {
         String js = "(function(){var x=new XMLHttpRequest();x.open('GET','" + blobUrl + "',true);x.responseType='blob';" +
                 "x.onload=function(){var r=new FileReader();r.onloadend=function(){" +
-                "var b64=r.result.split(',')[1];" +
-                "if(window.AndroidBridge)AndroidBridge.saveBase64File(b64,'save_'+Date.now()+'.json');" +
+                "if(window.AndroidBridge)AndroidBridge.saveBase64File(r.result,'application/json','save_'+Date.now()+'.json');" +
                 "};r.readAsDataURL(x.response);};x.send();})();";
         webView.evaluateJavascript(js, null);
     }
 
-    /* ==================== 其他輔助 ==================== */
+    /* ==================== 輔助 ==================== */
 
     private void initFileChooserLauncher() {
         fileChooserLauncher = registerForActivityResult(
@@ -382,6 +588,12 @@ public class MainActivity extends AppCompatActivity {
                     if (result.getResultCode() == RESULT_OK && result.getData() != null) {
                         if (result.getData().getData() != null) {
                             results = new Uri[]{result.getData().getData()};
+                        } else if (result.getData().getClipData() != null) {
+                            int count = result.getData().getClipData().getItemCount();
+                            results = new Uri[count];
+                            for (int i = 0; i < count; i++) {
+                                results[i] = result.getData().getClipData().getItemAt(i).getUri();
+                            }
                         }
                     }
                     filePathCallback.onReceiveValue(results);
@@ -393,7 +605,8 @@ public class MainActivity extends AppCompatActivity {
         createDocumentLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
-                    if (result.getResultCode() == RESULT_OK && result.getData() != null && pendingSaveBytes != null) {
+                    if (result.getResultCode() == RESULT_OK && result.getData() != null
+                            && result.getData().getData() != null && pendingSaveBytes != null) {
                         try (OutputStream os = getContentResolver().openOutputStream(result.getData().getData())) {
                             if (os != null) {
                                 os.write(pendingSaveBytes);
@@ -404,6 +617,7 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                     pendingSaveBytes = null;
+                    pendingSaveFileName = null;
                 });
     }
 
@@ -422,13 +636,29 @@ public class MainActivity extends AppCompatActivity {
     @Keep
     public class AndroidBridge {
         @JavascriptInterface
+        public void setPluginMode(boolean enabled) {
+            injectPluginsEnabled = enabled;
+            Log.d(TAG, "外掛模式 = " + enabled);
+        }
+
+        @JavascriptInterface
         public void saveBase64File(String base64, String fileName) {
-            processAndSaveFile(base64, "application/json", fileName);
+            runOnUiThread(() -> processAndSaveFile(base64, "application/json", fileName));
         }
 
         @JavascriptInterface
         public void saveBase64File(String data, String mime, String fileName) {
-            processAndSaveFile(data, mime, fileName);
+            runOnUiThread(() -> processAndSaveFile(data, mime, fileName));
+        }
+
+        @JavascriptInterface
+        public void log(String message) {
+            Log.d(TAG, "[Bridge] " + message);
+        }
+
+        @JavascriptInterface
+        public void toast(String message) {
+            runOnUiThread(() -> Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show());
         }
     }
 
