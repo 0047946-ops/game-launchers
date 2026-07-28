@@ -7,7 +7,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
-import android.provider.Settings;
 import android.util.Base64;
 import android.util.Log;
 import android.webkit.CookieManager;
@@ -58,7 +57,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        checkAllFilesAccessPermission();
         initFileChooserLauncher();
         initCreateDocumentLauncher();
 
@@ -334,7 +332,7 @@ public class MainActivity extends AppCompatActivity {
                 "    }" +
                 "    const buffs = [" +
                 "        { selector: '.status-haste', btn: '#btn-use-haste-potion' }," +
-                "        { selector: '.status-shield', btn: '#btn-use-shield' }," +
+                "        { selector: '.status-shield, btn: '#btn-use-shield' }," +
                 "        { selector: '.status-holy-weapon', btn: '#btn-use-holy-weapon' }," +
                 "        { selector: '.status-berserk', btn: '#btn-use-berserk' }" +
                 "    ];" +
@@ -805,18 +803,6 @@ public class MainActivity extends AppCompatActivity {
                     pendingSaveBytes = null;
                     pendingSaveFileName = null;
                 });
-    }
-
-    private void checkAllFilesAccessPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-            try {
-                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                intent.setData(Uri.parse("package:" + getPackageName()));
-                startActivity(intent);
-            } catch (Exception e) {
-                startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
-            }
-        }
     }
 
     @Keep
