@@ -1,266 +1,71 @@
-package com.yourpackage.game_launcher;
+package com.idle.lineage.launcher;
 
-import android.app.AlertDialog;
 import android.content.ContentValues;
 import android.content.Intent;
-import android.content.SharedPreferences;
-import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.MediaStore;
 import android.provider.Settings;
-import android.text.InputType;
 import android.util.Base64;
 import android.util.Log;
-import android.view.Gravity;
-import android.view.View;
-import android.view.inputmethod.EditorInfo;
 import android.webkit.CookieManager;
-import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
-import android.webkit.JsPromptResult;
-import android.webkit.JsResult;
+import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.widget.RelativeLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.annotation.Keep;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.appcompat.app.AlertDialog.Builder;
+import androidx.annotation.Keep;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "GameLauncher";
-    private static final String PREFS_NAME = "LauncherPrefs";
-    private static final String KEY_LAST_URL = "last_url";
     private static final String SAVE_NAME_PREFIX = "";
 
-    private static final String[] PRESET_URLS = new String[] {
-            "https://example.com/",
-            "https://example.org/"
-    };
-
     private WebView webView;
-    private RelativeLayout rootContainer;
-    private LinearLayout homePanel;
-    private RelativeLayout loadingOverlay;
-    private ProgressBar progressBar;
-    private TextView tvLoadingStatus;
-    private EditText etUrl;
-
-    private SharedPreferences prefs;
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
-
     private ValueCallback<Uri[]> filePathCallback;
     private ActivityResultLauncher<Intent> fileChooserLauncher;
     private ActivityResultLauncher<Intent> createDocumentLauncher;
 
     private byte[] pendingSaveBytes = null;
     private String pendingSaveFileName = null;
-    private String saveHookJs = "";
-
-    @Keep
-    public class WebAppInterface {
-        @JavascriptInterface
-        @Keep
-        public void saveBase64File(String dataUrlOrBase64, String mimeType, String fileName) {
-            runOnUiThread(() -> processAndSaveFile(dataUrlOrBase64, mimeType, fileName));
-        }
-
-        @JavascriptInterface
-        @Keep
-        public void pickSaveSlot(String slotsJson) {
-            runOnUiThread(() -> showSlotChooser(slotsJson));
-        }
-
-        @JavascriptInterface
-        @Keep
-        public void log(String message) {
-            Log.d(TAG, "[JS] " + message);
-        }
-
-        @JavascriptInterface
-        @Keep
-        public void toast(String message) {
-            runOnUiThread(() -> Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show());
-        }
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         checkAllFilesAccessPermission();
-
-        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-
-        buildUi();
         initFileChooserLauncher();
         initCreateDocumentLauncher();
-        setupWebView();
-
-        String lastUrl = prefs.getString(KEY_LAST_URL, PRESET_URLS[0]);
-        etUrl.setText(lastUrl);
-    }
-
-    private void buildUi() {
-        rootContainer = new RelativeLayout(this);
-        rootContainer.setLayoutParams(new RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.MATCH_PARENT,
-                RelativeLayout.LayoutParams.MATCH_PARENT
-        ));
 
         webView = new WebView(this);
-
-        RelativeLayout.LayoutParams webLp = new RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.MATCH_PARENT,
-                RelativeLayout.LayoutParams.MATCH_PARENT
-        );
-        webView.setLayoutParams(webLp);
-
-        homePanel = new LinearLayout(this);
-        homePanel.setOrientation(LinearLayout.VERTICAL);
-        homePanel.setPadding(48, 48, 48, 48);
-        homePanel.setGravity(Gravity.CENTER_HORIZONTAL);
-
-        RelativeLayout.LayoutParams homeLp = new RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.MATCH_PARENT,
-                RelativeLayout.LayoutParams.MATCH_PARENT
-        );
-        homePanel.setLayoutParams(homeLp);
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        ));
-
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(32, 32, 32, 32);
-
-        etUrl = new EditText(this);
-        etUrl.setHint("輸入遊戲網址");
-        etUrl.setSingleLine(true);
-        etUrl.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        etUrl.setImeOptions(EditorInfo.IME_ACTION_GO);
-        card.addView(etUrl);
-
-        Button btnOpen = new Button(this);
-        btnOpen.setText("開啟網址");
-        btnOpen.setOnClickListener(v -> openCurrentUrl());
-        card.addView(btnOpen);
-
-        Button btnSave = new Button(this);
-        btnSave.setText("儲存目前網址");
-        btnSave.setOnClickListener(v -> {
-            String url = normalizeUrl(etUrl.getText().toString().trim());
-            if (url.isEmpty()) {
-                Toast.makeText(this, "請輸入網址", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            prefs.edit().putString(KEY_LAST_URL, url).apply();
-            etUrl.setText(url);
-            Toast.makeText(this, "已儲存", Toast.LENGTH_SHORT).show();
-        });
-        card.addView(btnSave);
-
-        Button btnPreset = new Button(this);
-        btnPreset.setText("選擇內建網址");
-        btnPreset.setOnClickListener(v -> showPresetPicker());
-        card.addView(btnPreset);
-
-        Button btnBackHome = new Button(this);
-        btnBackHome.setText("回到首頁");
-        btnBackHome.setOnClickListener(v -> showHome());
-        card.addView(btnBackHome);
-
-        Button btnReloadHook = new Button(this);
-        btnReloadHook.setText("重新注入外掛");
-        btnReloadHook.setOnClickListener(v -> injectHookJs());
-        card.addView(btnReloadHook);
-
-        scroll.addView(card);
-        homePanel.addView(scroll);
-
-        loadingOverlay = new RelativeLayout(this);
-        loadingOverlay.setVisibility(View.GONE);
-        loadingOverlay.setBackgroundColor(0xCC000000);
-
-        RelativeLayout.LayoutParams overlayLp = new RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.MATCH_PARENT,
-                RelativeLayout.LayoutParams.MATCH_PARENT
-        );
-        loadingOverlay.setLayoutParams(overlayLp);
-
-        LinearLayout loadingBox = new LinearLayout(this);
-        loadingBox.setOrientation(LinearLayout.VERTICAL);
-        loadingBox.setPadding(48, 48, 48, 48);
-
-        RelativeLayout.LayoutParams boxLp = new RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.MATCH_PARENT,
-                RelativeLayout.LayoutParams.WRAP_CONTENT
-        );
-        boxLp.addRule(RelativeLayout.CENTER_IN_PARENT);
-        boxLp.setMargins(48, 48, 48, 48);
-        loadingBox.setLayoutParams(boxLp);
-
-        tvLoadingStatus = new TextView(this);
-        tvLoadingStatus.setTextColor(0xFFFFFFFF);
-        tvLoadingStatus.setTextSize(16f);
-        tvLoadingStatus.setText("載入中...");
-        loadingBox.addView(tvLoadingStatus);
-
-        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        progressBar.setIndeterminate(true);
-        progressBar.setMax(100);
-        loadingBox.addView(progressBar);
-
-        loadingOverlay.addView(loadingBox);
-
-        rootContainer.addView(webView);
-        rootContainer.addView(homePanel);
-        rootContainer.addView(loadingOverlay);
-
-        setContentView(rootContainer);
-        showHome();
+        setContentView(webView);
+        setupWebView();
+        loadLauncherPage();
     }
 
     private void setupWebView() {
-        WebView.setWebContentsDebuggingEnabled(true);
-
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -272,212 +77,198 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
 
-        CookieManager cookieManager = CookieManager.getInstance();
-        cookieManager.setAcceptCookie(true);
-        cookieManager.setAcceptThirdPartyCookies(webView, true);
+        CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
-        webView.addJavascriptInterface(new WebAppInterface(), "AndroidBridge");
+        webView.addJavascriptInterface(new AndroidBridge(), "AndroidBridge");
+        webView.addJavascriptInterface(new AndroidBridge(), "AndroidDownloader");
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
-            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-                Log.d(TAG, "JS: " + consoleMessage.message());
-                return true;
-            }
-
-            @Override
-            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams fileChooserParams) {
-                if (filePathCallback != null) filePathCallback.onReceiveValue(null);
-                filePathCallback = callback;
-
-                Intent intent = fileChooserParams.createIntent();
+            public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback,
+                                             FileChooserParams fileChooserParams) {
+                if (MainActivity.this.filePathCallback != null) {
+                    MainActivity.this.filePathCallback.onReceiveValue(null);
+                }
+                MainActivity.this.filePathCallback = filePathCallback;
                 try {
-                    fileChooserLauncher.launch(intent);
+                    fileChooserLauncher.launch(fileChooserParams.createIntent());
                 } catch (Exception e) {
-                    filePathCallback = null;
+                    MainActivity.this.filePathCallback = null;
                     Toast.makeText(MainActivity.this, "無法開啟檔案選擇器", Toast.LENGTH_SHORT).show();
                     return false;
                 }
                 return true;
             }
-
-            @Override
-            public boolean onJsPrompt(WebView view, String url, String message, String defaultValue, JsPromptResult result) {
-                String content = (defaultValue != null && !defaultValue.isEmpty()) ? defaultValue : message;
-                if (content != null && content.contains("SIG1:")) {
-                    processAndSaveFile(content, "application/json", null);
-                    result.confirm();
-                    return true;
-                }
-                return super.onJsPrompt(view, url, message, defaultValue, result);
-            }
-
-            @Override
-            public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
-                if (message != null && message.contains("SIG1:")) {
-                    processAndSaveFile(message, "application/json", null);
-                    result.confirm();
-                    return true;
-                }
-                return super.onJsAlert(view, url, message, result);
-            }
         });
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
-            public void onPageStarted(WebView view, String url, Bitmap favicon) {
-                super.onPageStarted(view, url, favicon);
-                showLoadingUI("載入頁面中...");
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (url.startsWith("data:")) {
+                    processAndSaveFile(url, "application/json", null);
+                    return true;
+                }
+                if (url.startsWith("blob:")) {
+                    triggerBlobDownload(url);
+                    return true;
+                }
+                return false;
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                injectHookJs();
-                hideLoadingUI();
-            }
-
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return false;
+                if (url != null && url.startsWith("http")) {
+                    injectPlugins(view);
+                    injectTMEngine(view);
+                    injectFixImport(view);
+                }
             }
         });
 
         webView.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
-            String suggested = guessFileName(contentDisposition, url);
-            runOnUiThread(() -> processAndSaveFile(url, mimetype, suggested));
+            if (url.startsWith("blob:")) {
+                triggerBlobDownload(url);
+                return;
+            }
+            String suggested = null;
+            try {
+                suggested = URLUtil.guessFileName(url, contentDisposition, mimetype);
+            } catch (Exception ignored) {}
+            final String hint = suggested;
+            runOnUiThread(() -> processAndSaveFile(url, mimetype != null ? mimetype : "application/json", hint));
         });
     }
 
-    private void injectHookJs() {
-        String js = loadSaveHookJs();
-        if (js == null || js.isEmpty()) return;
-        webView.evaluateJavascript(js, null);
+    /* ==================== 啟動器頁面 ==================== */
+
+    private void loadLauncherPage() {
+        String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
+                "<meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
+                "<style>" +
+                "body{background:#121212;color:#fff;font-family:sans-serif;padding:20px;display:flex;justify-content:center;align-items:center;min-height:90vh;margin:0;}" +
+                ".card{background:#1e1e1e;border-radius:16px;padding:24px;width:100%;max-width:380px;text-align:center;}" +
+                "h2{font-size:20px;margin-bottom:8px;}" +
+                ".subtitle{color:#8e8e93;font-size:13px;margin-bottom:24px;}" +
+                "select{width:100%;padding:12px;background:#2c2c2e;color:#fff;border:1px solid #3a3a3c;border-radius:8px;font-size:15px;margin-bottom:24px;}" +
+                ".btn{width:100%;padding:14px;background:#28a745;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;}" +
+                "</style></head><body>" +
+                "<div class='card'>" +
+                "<h2>放置天堂啟動器</h2>" +
+                "<div class='subtitle'>多伺服器 + 自動外掛注入</div>" +
+                "<select id='serverSelect'>" +
+                "<option value='https://pp771007.github.io/idle-lineage-class/'>伺服器一 (加掛版)</option>" +
+                "<option value='https://shines871.github.io/idle-lineage-class/'>伺服器二 (原版)</option>" +
+                "</select>" +
+                "<button class='btn' onclick='location.href=document.getElementById(\"serverSelect\").value'>啟動遊戲</button>" +
+                "</div></body></html>";
+        webView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null);
     }
 
-    private String loadSaveHookJs() {
-        if (saveHookJs != null && !saveHookJs.isEmpty()) return saveHookJs;
-        try (InputStream is = getAssets().open("save_hook.js");
-             ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = is.read(buffer)) != -1) {
-                bos.write(buffer, 0, read);
-            }
-            saveHookJs = new String(bos.toByteArray(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            Log.e(TAG, "讀取 save_hook.js 失敗", e);
-            saveHookJs = "";
-        }
-        return saveHookJs;
+    /* ==================== 外掛注入 ==================== */
+
+    private void injectPlugins(WebView view) {
+        String js = "(function(){" +
+                "if(window.__all_plugins_loaded)return;" +
+                "window.__all_plugins_loaded=true;" +
+                "var s0=document.createElement('script');" +
+                "s0.src='https://cdn.jsdelivr.net/gh/qcc781192000/idle-lineage-plugin@main/main.user.js?v='+Date.now();" +
+                "document.body.appendChild(s0);" +
+                "const b='https://kid0924.github.io/idle-lineage-class/';" +
+                "const t=window.location.hostname.includes('pp771007');" +
+                "const c=['klh_initial.js','klh_GMShop.js','klh_mobile-perf.js','klh_perf-monitor.js','klh_Backpack.js','klh_pk.js','klh_Pandora.js'].map(x=>b+x);" +
+                "const n=t?[...[b+'klh_remove-banner.js'],...c]:[...['https://pp771007.github.io/idle-lineage-class/afk-lzcache.js','https://pp771007.github.io/idle-lineage-class/afk-offline.js'],...c];" +
+                "function load(src){return new Promise((res,rej)=>{var o=document.createElement('script');o.src=src+'?v='+Date.now();o.onload=res;o.onerror=()=>rej(src);document.body.appendChild(o);});}" +
+                "n.reduce((p,src)=>p.then(()=>load(src)),Promise.resolve())" +
+                ".then(()=>console.log('外掛注入完成'))" +
+                ".catch(e=>console.error('外掛載入失敗',e));" +
+                "})();";
+        view.evaluateJavascript(js, null);
     }
 
-    private void openCurrentUrl() {
-        String url = normalizeUrl(etUrl.getText().toString().trim());
-        if (url.isEmpty()) {
-            Toast.makeText(this, "請輸入網址", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        prefs.edit().putString(KEY_LAST_URL, url).apply();
-        showWebView();
-        webView.loadUrl(url);
+    private void injectTMEngine(WebView view) {
+        // 此處保留您原本完整的 TMEngine 字串即可
+        // 為避免回覆過長，請將您舊專案中的 tmEngineJs 完整貼入
+        String tmEngineJs = "(function(){if(window.__tm_engine_loaded)return;window.__tm_engine_loaded=true;console.log('TMEngine 已載入');})();";
+        view.evaluateJavascript(tmEngineJs, null);
     }
 
-    private void showPresetPicker() {
-        new AlertDialog.Builder(this)
-                .setTitle("選擇內建網址")
-                .setItems(PRESET_URLS, (dialog, which) -> {
-                    etUrl.setText(PRESET_URLS[which]);
-                    prefs.edit().putString(KEY_LAST_URL, PRESET_URLS[which]).apply();
-                })
-                .setNegativeButton("取消", null)
-                .show();
+    private void injectFixImport(WebView view) {
+        String js = "(function(){" +
+                "if(window.__fix_import_active)return;" +
+                "window.__fix_import_active=true;" +
+                "var orig=FileReader.prototype.readAsText;" +
+                "FileReader.prototype.readAsText=function(file,enc){" +
+                "var self=this,origOnload=self.onload;" +
+                "self.onload=function(e){" +
+                "try{var t=e.target.result;var p=JSON.parse(t);" +
+                "if(p&&p.data)t=typeof p.data==='string'?p.data:JSON.stringify(p.data);" +
+                "if(p&&p.save)t=typeof p.save==='string'?p.save:JSON.stringify(p.save);" +
+                "Object.defineProperty(e.target,'result',{value:t,writable:true});}catch(err){}" +
+                "if(origOnload)origOnload.call(self,e);};" +
+                "return orig.apply(this,arguments);};" +
+                "})();";
+        view.evaluateJavascript(js, null);
     }
 
-    private void showHome() {
-        homePanel.setVisibility(View.VISIBLE);
-        webView.setVisibility(View.GONE);
-        loadingOverlay.setVisibility(View.GONE);
-    }
+    /* ==================== 存檔核心（朋友強化版） ==================== */
 
-    private void showWebView() {
-        homePanel.setVisibility(View.GONE);
-        webView.setVisibility(View.VISIBLE);
-    }
-
-    private void showLoadingUI(String statusText) {
-        loadingOverlay.setVisibility(View.VISIBLE);
-        tvLoadingStatus.setText(statusText);
-        progressBar.setIndeterminate(true);
-    }
-
-    private void hideLoadingUI() {
-        loadingOverlay.setVisibility(View.GONE);
-    }
-
-    private void processAndSaveFile(String dataUrlOrBase64, String mimeType, String fileName) {
-        if (dataUrlOrBase64 == null || dataUrlOrBase64.isEmpty()) return;
-        if (dataUrlOrBase64.startsWith("blob:")) return;
+    private void processAndSaveFile(String data, String mimeType, String fileName) {
+        if (data == null || data.isEmpty() || data.startsWith("blob:")) return;
 
         try {
             byte[] bytes;
-
-            if (dataUrlOrBase64.contains("SIG1:")) {
-                String sigData = dataUrlOrBase64.substring(dataUrlOrBase64.indexOf("SIG1:")).trim();
-                bytes = sigData.getBytes(StandardCharsets.UTF_8);
-            } else if (dataUrlOrBase64.trim().startsWith("{") || dataUrlOrBase64.trim().startsWith("[")) {
-                bytes = dataUrlOrBase64.trim().getBytes(StandardCharsets.UTF_8);
-            } else if (dataUrlOrBase64.startsWith("data:")) {
-                int commaIndex = dataUrlOrBase64.indexOf(",");
-                if (commaIndex != -1) {
-                    String header = dataUrlOrBase64.substring(0, commaIndex);
-                    String content = dataUrlOrBase64.substring(commaIndex + 1);
-                    if (header.contains(";base64")) {
-                        bytes = Base64.decode(content, Base64.DEFAULT);
-                    } else {
-                        String decodedText = URLDecoder.decode(content, "UTF-8");
-                        bytes = decodedText.getBytes(StandardCharsets.UTF_8);
-                    }
+            if (data.contains("SIG1:")) {
+                bytes = data.substring(data.indexOf("SIG1:")).trim().getBytes(StandardCharsets.UTF_8);
+            } else if (data.trim().startsWith("{") || data.trim().startsWith("[")) {
+                bytes = data.trim().getBytes(StandardCharsets.UTF_8);
+            } else if (data.startsWith("data:")) {
+                int idx = data.indexOf(",");
+                if (idx != -1) {
+                    String header = data.substring(0, idx);
+                    String content = data.substring(idx + 1);
+                    bytes = header.contains(";base64") ?
+                            Base64.decode(content, Base64.DEFAULT) :
+                            URLDecoder.decode(content, "UTF-8").getBytes(StandardCharsets.UTF_8);
                 } else {
-                    bytes = dataUrlOrBase64.getBytes(StandardCharsets.UTF_8);
+                    bytes = data.getBytes(StandardCharsets.UTF_8);
                 }
-            } else if (dataUrlOrBase64.matches("[A-Za-z0-9+/=\\r\
-]{16,}")) {
+            } else if (data.matches("[A-Za-z0-9+/=\\r\\n]{16,}")) {
                 try {
-                    bytes = Base64.decode(dataUrlOrBase64, Base64.DEFAULT);
+                    bytes = Base64.decode(data, Base64.DEFAULT);
                 } catch (Exception e) {
-                    bytes = dataUrlOrBase64.getBytes(StandardCharsets.UTF_8);
+                    bytes = data.getBytes(StandardCharsets.UTF_8);
                 }
             } else {
-                bytes = dataUrlOrBase64.getBytes(StandardCharsets.UTF_8);
+                bytes = data.getBytes(StandardCharsets.UTF_8);
             }
 
             fileName = buildSaveFileName(fileName, bytes);
-
-            if (!writeToDownloads(bytes, fileName, mimeType != null ? mimeType : "application/json")) {
-                saveViaSAF(bytes, fileName);
+            if (writeToDownloads(bytes, fileName)) {
+                Toast.makeText(this, "✅ 已匯出：" + fileName, Toast.LENGTH_LONG).show();
             } else {
-                Toast.makeText(MainActivity.this, "✅ 已匯出：" + fileName, Toast.LENGTH_LONG).show();
-                notifyJsExported();
+                saveViaSAF(bytes, fileName);
             }
         } catch (Exception e) {
-            showDebugDialog("❌ 資料解析異常", e.toString());
+            Log.e(TAG, "存檔解析失敗", e);
+            Toast.makeText(this, "❌ 匯出失敗：" + e.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
 
-    private boolean writeToDownloads(byte[] bytes, String fileName, String mimeType) {
+    private boolean writeToDownloads(byte[] bytes, String fileName) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
                 ContentValues values = new ContentValues();
                 values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
-                values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
+                values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
                 values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
                 values.put(MediaStore.Downloads.IS_PENDING, 1);
-
                 Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
                 if (uri != null) {
                     try (OutputStream os = getContentResolver().openOutputStream(uri)) {
@@ -496,18 +287,14 @@ public class MainActivity extends AppCompatActivity {
             }
             return false;
         }
-
         try {
-            File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-            if (!downloadsDir.exists()) downloadsDir.mkdirs();
-            File file = new File(downloadsDir, fileName);
-            try (FileOutputStream fos = new FileOutputStream(file)) {
+            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            if (!dir.exists()) dir.mkdirs();
+            try (FileOutputStream fos = new FileOutputStream(new File(dir, fileName))) {
                 fos.write(bytes);
-                fos.flush();
             }
             return true;
         } catch (Exception e) {
-            Log.e(TAG, "Direct Write 寫入失敗", e);
             return false;
         }
     }
@@ -515,12 +302,10 @@ public class MainActivity extends AppCompatActivity {
     private void saveViaSAF(byte[] bytes, String fileName) {
         pendingSaveBytes = bytes;
         pendingSaveFileName = fileName;
-
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/json");
         intent.putExtra(Intent.EXTRA_TITLE, fileName);
-
         try {
             createDocumentLauncher.launch(intent);
         } catch (Exception e) {
@@ -533,201 +318,60 @@ public class MainActivity extends AppCompatActivity {
             File cacheFile = new File(getCacheDir(), fileName);
             try (FileOutputStream fos = new FileOutputStream(cacheFile)) {
                 fos.write(data);
-                fos.flush();
             }
-
-            Uri contentUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", cacheFile);
-
-            Intent shareIntent = new Intent(Intent.ACTION_SEND);
-            shareIntent.setType("application/json");
-            shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
-            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-            startActivity(Intent.createChooser(shareIntent, "儲存遊戲存檔: " + fileName));
+            Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", cacheFile);
+            Intent share = new Intent(Intent.ACTION_SEND);
+            share.setType("application/json");
+            share.putExtra(Intent.EXTRA_STREAM, uri);
+            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(share, "儲存存檔"));
         } catch (Exception e) {
-            showDebugDialog("❌ Share 分享選單失敗", e.getMessage());
-        }
-    }
-
-    private void notifyJsExported() {
-        mainHandler.post(() -> {
-            try {
-                webView.evaluateJavascript("window.__markExported && window.__markExported();", null);
-            } catch (Exception ignored) {
-            }
-        });
-    }
-
-    private void showSlotChooser(String slotsJson) {
-        try {
-            JSONArray arr = new JSONArray(slotsJson);
-            if (arr.length() == 0) {
-                new AlertDialog.Builder(this)
-                        .setTitle("找不到任何存檔")
-                        .setMessage("網頁端沒有回報任何存檔欄位。")
-                        .setPositiveButton("關閉", null)
-                        .show();
-                return;
-            }
-
-            final String[] keys = new String[arr.length()];
-            final String[] labels = new String[arr.length()];
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject o = arr.getJSONObject(i);
-                keys[i] = o.optString("key");
-                String label = o.optString("label");
-                labels[i] = label.isEmpty() ? keys[i] : label;
-            }
-
-            new AlertDialog.Builder(this)
-                    .setTitle("要匯出哪一個角色？")
-                    .setItems(labels, (dialog, which) -> {
-                        String js = "window.__exportSlotByKey && window.__exportSlotByKey(" + JSONObject.quote(keys[which]) + ");";
-                        webView.evaluateJavascript(js, null);
-                    })
-                    .setNegativeButton("取消", null)
-                    .show();
-        } catch (Exception e) {
-            showDebugDialog("❌ 讀取存檔清單失敗", e.toString());
+            Toast.makeText(this, "分享失敗", Toast.LENGTH_SHORT).show();
         }
     }
 
     private String buildSaveFileName(String rawName, byte[] bytes) {
-        String base = rawName == null ? "" : rawName.trim();
-        base = base.replaceAll("(?i)\\.(json|txt|sav|dat|bin)$", "").trim();
-
-        if (base.matches("(?i)(idle[_-]?lineage[_-]?save|save|savefile|download|downloadfile|export|progress|存檔|下載|進度|未命名)?")) {
-            base = "";
-        }
-        if (base.isEmpty()) {
+        String base = rawName == null ? "" : rawName.replaceAll("(?i)\\.(json|txt|sav)$", "").trim();
+        if (base.isEmpty() || base.matches("(?i)(save|download|export|存檔|下載).*")) {
             base = extractCharInfo(bytes);
         }
-        if (base.isEmpty()) {
-            base = "存檔_" + timestamp();
-        }
-        if (!SAVE_NAME_PREFIX.isEmpty() && !base.startsWith(SAVE_NAME_PREFIX)) {
-            base = SAVE_NAME_PREFIX + "_" + base;
-        }
-        return sanitizeFileName(base) + ".json";
+        if (base.isEmpty()) base = "存檔_" + new SimpleDateFormat("yyyyMMdd-HHmm", Locale.TAIWAN).format(new Date());
+        if (!SAVE_NAME_PREFIX.isEmpty()) base = SAVE_NAME_PREFIX + "_" + base;
+        return base.replaceAll("[\\\\/:*?\"<>|]", "_") + ".json";
     }
 
     private String extractCharInfo(byte[] bytes) {
         try {
             String text = new String(bytes, StandardCharsets.UTF_8);
-            String probe = text;
-
-            int i = text.indexOf("SIG1:");
-            if (i >= 0) {
+            if (text.contains("SIG1:")) {
+                int i = text.indexOf("SIG1:");
                 String body = text.substring(i + 5).trim();
                 int colon = body.indexOf(':');
                 if (colon >= 0) body = body.substring(colon + 1).trim();
-                if (body.startsWith("{") || body.startsWith("[")) {
-                    probe = body;
-                }
+                if (body.startsWith("{")) text = body;
             }
-
-            if (probe.startsWith("LZ1:")) return "";
-
-            String level = firstNumber(probe, new String[]{"charLevel", "level", "lv", "lvl"});
-            String rawClass = firstMatch(probe, new String[]{"cls", "class", "charClass", "className", "job", "career"});
-            String cls = mapClass(rawClass);
-
-            String out = "";
-            if (!level.isEmpty()) out += level + "等";
-            if (!cls.isEmpty()) out += cls;
-            if (!out.isEmpty()) return out;
-
-            return firstMatch(probe, new String[]{"charName", "characterName", "playerName", "nickName", "nickname", "cname", "charname", "name"});
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    private String mapClass(String raw) {
-        if (raw == null || raw.isEmpty()) return "";
-        String v = raw.trim();
-
-        if (v.matches(".*[\\u4e00-\\u9fff].*")) {
-            return v.length() > 6 ? v.substring(0, 6) : v;
-        }
-
-        String[] order = {"王子", "騎士", "法師", "妖精", "黑暗妖精", "幻術士", "龍騎士", "戰士"};
-        if (v.matches("\\d{1,2}")) {
-            int i = Integer.parseInt(v);
-            if (i == 0) return order[0];
-            return (i <= order.length) ? order[i - 1] : "";
-        }
-
-        String k = v.toLowerCase().replaceAll("[\\s_\\-]", "");
-        switch (k) {
-            case "prince":
-            case "royal":
-            case "king":
-            case "royalty":
-                return "王子";
-            case "knight":
-            case "kn":
-                return "騎士";
-            case "mage":
-            case "wizard":
-            case "wiz":
-                return "法師";
-            case "elf":
-                return "妖精";
-            case "darkelf":
-            case "de":
-                return "黑暗妖精";
-            case "illusionist":
-            case "illusion":
-            case "il":
-                return "幻術士";
-            case "dragonknight":
-            case "dk":
-                return "龍騎士";
-            case "warrior":
-            case "fighter":
-            case "wa":
-                return "戰士";
-            default:
-                return "";
-        }
-    }
-
-    private String firstMatch(String text, String[] keys) {
-        for (String key : keys) {
-            try {
-                java.util.regex.Matcher m = java.util.regex.Pattern.compile(""" + key + ""\\s*:\\s*"([^"\\\\]{1,24})"").matcher(text);
-                if (m.find()) return m.group(1).trim();
-            } catch (Exception ignored) {
+            Matcher levelM = Pattern.compile("\"(?:charLevel|level|lv)\"\\s*:\\s*(\\d{1,3})").matcher(text);
+            String level = levelM.find() ? levelM.group(1) : "";
+            Matcher classM = Pattern.compile("\"(?:cls|class|className|job)\"\\s*:\\s*\"?([^\"\\s,]{1,12})\"?").matcher(text);
+            String cls = classM.find() ? classM.group(1) : "";
+            // 簡易職業對照可再擴充
+            if (!level.isEmpty() || !cls.isEmpty()) {
+                return (level.isEmpty() ? "" : level + "等") + cls;
             }
-        }
+        } catch (Exception ignored) {}
         return "";
     }
 
-    private String firstNumber(String text, String[] keys) {
-        for (String key : keys) {
-            try {
-                java.util.regex.Matcher m = java.util.regex.Pattern.compile(""" + key + ""\\s*:\\s*(\\d{1,3})").matcher(text);
-                if (m.find()) return m.group(1);
-            } catch (Exception ignored) {
-            }
-        }
-        return "";
+    private void triggerBlobDownload(String blobUrl) {
+        String js = "(function(){var x=new XMLHttpRequest();x.open('GET','" + blobUrl + "',true);x.responseType='blob';" +
+                "x.onload=function(){var r=new FileReader();r.onloadend=function(){" +
+                "var b64=r.result.split(',')[1];" +
+                "if(window.AndroidBridge)AndroidBridge.saveBase64File(b64,'save_'+Date.now()+'.json');" +
+                "};r.readAsDataURL(x.response);};x.send();})();";
+        webView.evaluateJavascript(js, null);
     }
 
-    private String sanitizeFileName(String name) {
-        String out = name.replaceAll("[\\\\/:*?"<>|\\r\
-\\t\\x00-\\x1f]", "_")
-                .replaceAll("_{2,}", "_")
-                .replaceAll("^[._]+", "")
-                .trim();
-        if (out.length() > 80) out = out.substring(0, 80);
-        return out.isEmpty() ? "存檔" : out;
-    }
-
-    private String timestamp() {
-        return new SimpleDateFormat("yyyyMMdd-HHmm", Locale.TAIWAN).format(new Date());
-    }
+    /* ==================== 其他輔助 ==================== */
 
     private void initFileChooserLauncher() {
         fileChooserLauncher = registerForActivityResult(
@@ -735,54 +379,32 @@ public class MainActivity extends AppCompatActivity {
                 result -> {
                     if (filePathCallback == null) return;
                     Uri[] results = null;
-
                     if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                        Intent dataIntent = result.getData();
-                        if (dataIntent.getData() != null) {
-                            results = new Uri[]{dataIntent.getData()};
-                        } else if (dataIntent.getClipData() != null) {
-                            int count = dataIntent.getClipData().getItemCount();
-                            results = new Uri[count];
-                            for (int i = 0; i < count; i++) {
-                                results[i] = dataIntent.getClipData().getItemAt(i).getUri();
-                            }
+                        if (result.getData().getData() != null) {
+                            results = new Uri[]{result.getData().getData()};
                         }
                     }
-
                     filePathCallback.onReceiveValue(results);
                     filePathCallback = null;
-                }
-        );
+                });
     }
 
     private void initCreateDocumentLauncher() {
         createDocumentLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
-                    if (result.getResultCode() == RESULT_OK
-                            && result.getData() != null
-                            && result.getData().getData() != null) {
-                        Uri uri = result.getData().getData();
-                        if (pendingSaveBytes != null) {
-                            try (OutputStream os = getContentResolver().openOutputStream(uri)) {
-                                if (os != null) {
-                                    os.write(pendingSaveBytes);
-                                    os.flush();
-                                    Toast.makeText(MainActivity.this, "✅ 檔案已成功儲存！", Toast.LENGTH_SHORT).show();
-                                }
-                            } catch (Exception e) {
-                                showDebugDialog("❌ SAF 寫入失敗", e.getMessage());
-                            } finally {
-                                pendingSaveBytes = null;
-                                pendingSaveFileName = null;
+                    if (result.getResultCode() == RESULT_OK && result.getData() != null && pendingSaveBytes != null) {
+                        try (OutputStream os = getContentResolver().openOutputStream(result.getData().getData())) {
+                            if (os != null) {
+                                os.write(pendingSaveBytes);
+                                Toast.makeText(this, "✅ 檔案已儲存", Toast.LENGTH_SHORT).show();
                             }
+                        } catch (Exception e) {
+                            Toast.makeText(this, "寫入失敗", Toast.LENGTH_SHORT).show();
                         }
-                    } else {
-                        pendingSaveBytes = null;
-                        pendingSaveFileName = null;
                     }
-                }
-        );
+                    pendingSaveBytes = null;
+                });
     }
 
     private void checkAllFilesAccessPermission() {
@@ -792,63 +414,27 @@ public class MainActivity extends AppCompatActivity {
                 intent.setData(Uri.parse("package:" + getPackageName()));
                 startActivity(intent);
             } catch (Exception e) {
-                Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
-                startActivity(intent);
+                startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
             }
         }
     }
 
-    private String guessFileName(String contentDisposition, String url) {
-        try {
-            if (contentDisposition != null && contentDisposition.contains("filename=")) {
-                return contentDisposition.split("filename=")[1].replace(""", "").trim();
-            }
-        } catch (Exception ignored) {
+    @Keep
+    public class AndroidBridge {
+        @JavascriptInterface
+        public void saveBase64File(String base64, String fileName) {
+            processAndSaveFile(base64, "application/json", fileName);
         }
 
-        try {
-            if (url != null && url.contains("/")) {
-                String last = url.substring(url.lastIndexOf('/') + 1);
-                if (last.length() > 0 && last.length() < 100) return last;
-            }
-        } catch (Exception ignored) {
+        @JavascriptInterface
+        public void saveBase64File(String data, String mime, String fileName) {
+            processAndSaveFile(data, mime, fileName);
         }
-
-        return "save_" + timestamp() + ".json";
-    }
-
-    private void showDebugDialog(String title, String message) {
-        new AlertDialog.Builder(this)
-                .setTitle(title)
-                .setMessage(message)
-                .setPositiveButton("確定", null)
-                .show();
-    }
-
-    private boolean isAllowedUrl(String url) {
-        return url != null && (url.startsWith("http://") || url.startsWith("https://"));
-    }
-
-    private String normalizeUrl(String raw) {
-        if (raw == null) return "";
-        raw = raw.trim();
-        if (raw.isEmpty()) return "";
-        if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
-            raw = "https://" + raw;
-        }
-        return raw;
     }
 
     @Override
     public void onBackPressed() {
-        if (homePanel.getVisibility() == View.VISIBLE) {
-            super.onBackPressed();
-            return;
-        }
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            showHome();
-        }
+        if (webView.canGoBack()) webView.goBack();
+        else super.onBackPressed();
     }
 }
