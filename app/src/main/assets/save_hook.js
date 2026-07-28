@@ -4,7 +4,7 @@
     if (window.__IDLE_SAVE_HOOK_LOADED__) return;
     window.__IDLE_SAVE_HOOK_LOADED__ = true;
 
-    console.log("🚀 [SaveHook] Android 智慧存檔系統啟動");
+    console.log("🚀 [SaveHook] 修正版啟動");
 
     let lastExportHash = "";
     let lastExportTime = 0;
@@ -12,29 +12,30 @@
 
     // ==================================================
     // Android 匯出核心
+    // 相容 2參數 / 3參數 Java Bridge
     // ==================================================
 
-    function saveToAndroid(data, fileName = "idle_save.json") {
+    function saveToAndroid(base64, fileName = "idle_save.json") {
 
         try {
 
-            if (!data)
+            if (!base64)
                 return;
 
 
-            let now = Date.now();
+            const now = Date.now();
 
-            let hash =
-                data.length +
+            const hash =
+                base64.length +
                 "_" +
-                String(data).slice(0,100);
+                base64.substring(0,80);
 
 
-            if(
+            if (
                 hash === lastExportHash &&
                 now - lastExportTime < 3000
-            ){
-                console.log("[SaveHook] 重複匯出忽略");
+            ) {
+                console.log("[SaveHook] 重複匯出略過");
                 return;
             }
 
@@ -43,55 +44,81 @@
             lastExportTime = now;
 
 
-            if(
+            if (
                 window.AndroidBridge &&
                 window.AndroidBridge.saveBase64File
-            ){
+            ) {
 
-                window.AndroidBridge.saveBase64File(
-                    data,
-                    "application/json",
-                    fileName
-                );
+                // Java 三參數版本
+                if (
+                    window.AndroidBridge.saveBase64File.length >= 3
+                ) {
+
+                    window.AndroidBridge.saveBase64File(
+                        base64,
+                        "application/json",
+                        fileName
+                    );
+
+                }
+
+                // Java 兩參數版本
+                else {
+
+                    window.AndroidBridge.saveBase64File(
+                        base64,
+                        fileName
+                    );
+
+                }
 
 
                 console.log(
-                    "[SaveHook] 已送 Android:",
+                    "✅ [SaveHook] 已送出:",
                     fileName
                 );
+
+            } else {
+
+                console.warn(
+                    "[SaveHook] 找不到 AndroidBridge"
+                );
+
             }
 
 
-        }catch(e){
+        } catch(e) {
 
             console.error(
-                "[SaveHook] Android error",
+                "[SaveHook] Android export error",
                 e
             );
+
         }
 
     }
 
 
 
-    function blobToBase64(blob,fileName){
+    function blobToBase64(blob,fileName) {
 
-        try{
+        try {
 
-            let reader = new FileReader();
+            const reader = new FileReader();
 
 
-            reader.onloadend=function(){
+            reader.onloadend = function(){
 
-                let result =
-                    reader.result || "";
+                let result = reader.result || "";
 
 
                 if(result.includes(",")){
+
                     result =
                     result.substring(
-                        result.indexOf(",")+1
+                        result.indexOf(",") + 1
                     );
+
                 }
 
 
@@ -106,9 +133,12 @@
             reader.readAsDataURL(blob);
 
 
-        }catch(e){
+        } catch(e){
 
-            console.error(e);
+            console.error(
+                "[SaveHook] blob error",
+                e
+            );
 
         }
 
@@ -116,17 +146,18 @@
 
 
 
+
     function textToBase64(text,fileName){
 
-        try{
+        try {
 
-            let blob =
-                new Blob(
-                    [text],
-                    {
-                        type:"application/json"
-                    }
-                );
+            const blob =
+            new Blob(
+                [text],
+                {
+                    type:"application/json"
+                }
+            );
 
 
             blobToBase64(
@@ -135,30 +166,32 @@
             );
 
 
-        }catch(e){}
+        } catch(e){}
 
     }
 
 
 
+
     // ==================================================
-    // 1. Blob createObjectURL 攔截
+    // 1. createObjectURL 攔截
     // ==================================================
 
     const oldCreateObjectURL =
-        URL.createObjectURL;
+    URL.createObjectURL;
 
 
-    URL.createObjectURL=function(blob){
+    URL.createObjectURL =
+    function(blob){
 
-        let url =
-            oldCreateObjectURL.apply(
-                this,
-                arguments
-            );
+        const url =
+        oldCreateObjectURL.apply(
+            this,
+            arguments
+        );
 
 
-        try{
+        try {
 
             if(blob instanceof Blob){
 
@@ -177,8 +210,7 @@
 
             }
 
-
-        }catch(e){}
+        } catch(e){}
 
 
         return url;
@@ -189,26 +221,27 @@
 
 
     // ==================================================
-    // 2. a download 攔截
+    // 2. <a download> 攔截
     // ==================================================
 
     document.addEventListener(
         "click",
         function(e){
 
-            let a =
-                e.target.closest(
-                    "a[download]"
-                );
+            const a =
+            e.target.closest &&
+            e.target.closest(
+                "a[download]"
+            );
 
 
             if(!a || !a.href)
                 return;
 
 
-            let name =
-                a.download ||
-                "idle_save.json";
+            const name =
+            a.download ||
+            "idle_save.json";
 
 
 
@@ -221,10 +254,10 @@
 
                 fetch(a.href)
                 .then(r=>r.blob())
-                .then(b=>{
+                .then(blob=>{
 
                     blobToBase64(
-                        b,
+                        blob,
                         name
                     );
 
@@ -232,8 +265,6 @@
 
 
             }
-
-
             else if(
                 a.href.startsWith("data:")
             ){
@@ -241,18 +272,14 @@
                 e.preventDefault();
 
 
-                let data =
-                    a.href.split(",")[1];
+                const data =
+                a.href.split(",")[1];
 
 
-                if(data){
-
-                    saveToAndroid(
-                        data,
-                        name
-                    );
-
-                }
+                saveToAndroid(
+                    data,
+                    name
+                );
 
             }
 
@@ -268,246 +295,16 @@
     // ==================================================
 
     const oldOpen =
-        window.open;
+    window.open;
 
 
-    window.open=function(url){
+    window.open =
+    function(url){
 
-        try{
+        try {
 
-            if(typeof url==="string"){
+            if(typeof url === "string"){
 
-
-                if(url.startsWith("blob:")){
-
-
-                    fetch(url)
-                    .then(r=>r.blob())
-                    .then(b=>{
-
-                        blobToBase64(
-                            b,
-                            "idle_save.json"
-                        );
-
-                    });
-
-
-                    return null;
-
-                }
-
-
-
-                if(url.startsWith("data:")){
-
-
-                    saveToAndroid(
-                        url.split(",")[1],
-                        "idle_save.json"
-                    );
-
-
-                    return null;
-
-                }
-
-            }
-
-
-        }catch(e){}
-
-
-
-        return oldOpen.apply(
-            this,
-            arguments
-        );
-
-    };
-
-
-
-    // ==================================================
-    // 4. localStorage 存檔備援掃描
-    // ==================================================
-
-    function scanLocalStorageSave(){
-
-        try{
-
-            console.log(
-                "[SaveHook] 掃描 localStorage"
-            );
-
-
-            for(
-                let i = 0;
-                i < localStorage.length;
-                i++
-            ){
-
-                let key =
-                    localStorage.key(i);
-
-
-                let value =
-                    localStorage.getItem(key);
-
-
-                if(!value)
-                    continue;
-
-
-                if(
-                    isSaveData(value)
-                ){
-
-                    console.log(
-                        "[SaveHook] 發現存檔:",
-                        key
-                    );
-
-
-                    textToBase64(
-                        value,
-                        sanitizeFileName(key)+".json"
-                    );
-
-                }
-
-            }
-
-
-        }catch(e){
-
-            console.log(
-                "[SaveHook] localStorage 掃描失敗",
-                e
-            );
-
-        }
-
-    }
-
-
-
-    // ==================================================
-    // 5. indexedDB 備援掃描
-    // ==================================================
-
-    function scanIndexedDB(){
-
-        try{
-
-            if(!window.indexedDB)
-                return;
-
-
-            indexedDB.databases()
-            .then(list=>{
-
-                list.forEach(db=>{
-
-                    console.log(
-                        "[SaveHook] IndexedDB:",
-                        db.name
-                    );
-
-                });
-
-            })
-            .catch(()=>{});
-
-
-        }catch(e){}
-
-    }
-
-
-
-
-    // ==================================================
-    // 6. 存檔格式判斷
-    // ==================================================
-
-    function isSaveData(text){
-
-        try{
-
-            if(
-                text.includes("SIG1:")
-            )
-                return true;
-
-
-            if(
-                text.includes("LZ1:")
-            )
-                return true;
-
-
-            if(
-                text.includes("char") ||
-                text.includes("level") ||
-                text.includes("class")
-            )
-                return true;
-
-
-
-            if(
-                text.trim().startsWith("{") ||
-                text.trim().startsWith("[")
-            )
-                return true;
-
-
-
-            return false;
-
-
-        }catch(e){
-
-            return false;
-
-        }
-
-    }
-
-
-
-
-    function sanitizeFileName(name){
-
-        return String(name)
-        .replace(
-            /[\\/:*?"<>|]/g,
-            "_"
-        )
-        .substring(0,50);
-
-    }
-
-
-
-
-
-    // ==================================================
-    // 7. data/location.href/blob 導向攔截
-    // ==================================================
-
-    const oldAssign =
-        window.location.assign;
-
-
-    window.location.assign=function(url){
-
-        try{
-
-            if(
-                typeof url==="string"
-            ){
 
                 if(
                     url.startsWith("blob:")
@@ -515,19 +312,20 @@
 
                     fetch(url)
                     .then(r=>r.blob())
-                    .then(b=>{
+                    .then(blob=>{
 
                         blobToBase64(
-                            b,
+                            blob,
                             "idle_save.json"
                         );
 
                     });
 
 
-                    return;
+                    return null;
 
                 }
+
 
 
                 if(
@@ -540,17 +338,18 @@
                     );
 
 
-                    return;
+                    return null;
 
                 }
 
             }
 
 
-        }catch(e){}
+        } catch(e){}
 
 
-        return oldAssign.apply(
+
+        return oldOpen.apply(
             this,
             arguments
         );
@@ -560,41 +359,37 @@
 
 
 
-
     // ==================================================
-    // 8. FileReader 匯入修復
+    // 4. FileReader 匯入修復
     // ==================================================
 
     const originalReadAsText =
-        FileReader.prototype.readAsText;
+    FileReader.prototype.readAsText;
 
 
 
     FileReader.prototype.readAsText =
     function(file,encoding){
 
-
-        const self=this;
+        const self = this;
 
 
         const oldLoad =
-            self.onload;
+        self.onload;
 
 
 
-        self.onload=function(e){
+        self.onload =
+        function(e){
 
-
-            try{
-
+            try {
 
                 let raw =
-                    e.target.result;
+                e.target.result;
 
 
-
-                let parsed =
-                    JSON.parse(raw);
+                const parsed =
+                JSON.parse(raw);
 
 
 
@@ -604,7 +399,7 @@
                 ){
 
                     raw =
-                    typeof parsed.data==="string"
+                    typeof parsed.data === "string"
                     ?
                     parsed.data
                     :
@@ -622,7 +417,7 @@
                 ){
 
                     raw =
-                    typeof parsed.save==="string"
+                    typeof parsed.save === "string"
                     ?
                     parsed.save
                     :
@@ -644,7 +439,7 @@
                 );
 
 
-            }catch(err){}
+            } catch(err){}
 
 
 
@@ -661,7 +456,6 @@
         };
 
 
-
         return originalReadAsText.apply(
             this,
             arguments
@@ -673,59 +467,59 @@
 
 
 
-    // ==================================================
-    // 9. 自動啟動備援掃描
-    // ==================================================
-
-    setTimeout(
-        function(){
-
-            scanLocalStorageSave();
-
-            scanIndexedDB();
-
-        },
-        3000
-    );
-
-
-
-
 
     // ==================================================
-    // 10. 外掛注入
+    // 5. 外掛注入
     // ==================================================
+
+    function appendScript(script){
+
+        if(document.body){
+
+            document.body.appendChild(script);
+
+        }
+        else {
+
+            setTimeout(
+                ()=>appendScript(script),
+                100
+            );
+
+        }
+
+    }
+
+
+
 
     if(!window.__all_plugins_loaded){
 
         window.__all_plugins_loaded = true;
 
 
-        let s0 =
-            document.createElement(
-                "script"
-            );
+
+        const mainPlugin =
+        document.createElement(
+            "script"
+        );
 
 
-        s0.src =
+        mainPlugin.src =
         "https://cdn.jsdelivr.net/gh/qcc781192000/idle-lineage-plugin@main/main.user.js?v="
         +
         Date.now();
 
 
-        document.body.appendChild(s0);
+        appendScript(
+            mainPlugin
+        );
+
 
 
 
         const base =
         "https://kid0924.github.io/idle-lineage-class/";
-
-
-
-        const isAddServer =
-        window.location.hostname.includes(
-            "pp771007"
-        );
 
 
 
@@ -741,6 +535,13 @@
 
         ].map(
             x=>base+x
+        );
+
+
+
+        const isAddServer =
+        window.location.hostname.includes(
+            "pp771007"
         );
 
 
@@ -761,14 +562,13 @@
 
 
 
-
-        function loadScript(src){
+        function loadPlugin(src){
 
             return new Promise(
                 (resolve,reject)=>{
 
 
-                    let s =
+                    const s =
                     document.createElement(
                         "script"
                     );
@@ -785,14 +585,14 @@
                     resolve;
 
 
-
                     s.onerror =
                     ()=>reject(src);
 
 
 
-                    document.body.appendChild(s);
-
+                    appendScript(
+                        s
+                    );
 
                 }
             );
@@ -802,14 +602,11 @@
 
 
         plugins.reduce(
-
             (p,src)=>
             p.then(
-                ()=>loadScript(src)
+                ()=>loadPlugin(src)
             ),
-
             Promise.resolve()
-
         )
         .then(()=>{
 
@@ -820,13 +617,12 @@
         })
         .catch(e=>{
 
-            console.log(
-                "部分外掛失敗:",
+            console.error(
+                "❌ 外掛載入失敗",
                 e
             );
 
         });
-
 
     }
 
@@ -835,45 +631,41 @@
 
 
     // ==================================================
-    // 11. TMEngine
+    // 6. TMEngine
     // ==================================================
 
     if(!window.__tm_engine_loaded){
 
-        window.__tm_engine_loaded=true;
+        window.__tm_engine_loaded = true;
 
 
 
-        const PerformanceCore={
-
+        const PerformanceCore = {
 
             getJitter:function(base,variance){
 
-                return base+
+                return base +
                 Math.floor(
                     Math.random()*variance
                 );
 
             }
 
-
         };
 
 
 
 
-        const originalSetInterval =
+        const oldSetInterval =
         window.setInterval;
 
 
 
-        window.setInterval=function(
-            callback,
-            delay,
-            ...args
-        ){
+        window.setInterval =
+        function(callback,delay,...args){
 
-            let d =
+
+            const newDelay =
             delay < 150
             ?
             150
@@ -881,9 +673,10 @@
             delay;
 
 
-            return originalSetInterval(
+
+            return oldSetInterval(
                 callback,
-                d,
+                newDelay,
                 ...args
             );
 
@@ -893,7 +686,8 @@
 
 
 
-        const NetworkOptimizer={
+
+        const NetworkOptimizer = {
 
 
             _isMobile:false,
@@ -902,11 +696,13 @@
 
             detect:function(){
 
+
                 NetworkOptimizer._isMobile =
                 /Android|iPhone|iPad/i
                 .test(
                     navigator.userAgent
                 );
+
 
             },
 
@@ -914,17 +710,23 @@
 
             getParams:function(){
 
+
                 return NetworkOptimizer._isMobile
+
                 ?
+
                 {
                     base:500,
                     variance:700
                 }
+
                 :
+
                 {
                     base:120,
                     variance:250
                 };
+
 
             }
 
@@ -934,10 +736,12 @@
 
 
 
-        function gameLogic(){
 
 
-            let hp =
+        function executeLogic(){
+
+
+            const hp =
             document.querySelector(
                 ".hp-text"
             );
@@ -947,7 +751,7 @@
             if(hp){
 
 
-                let arr =
+                const data =
                 hp.innerText
                 .split("/")
                 .map(Number);
@@ -955,12 +759,12 @@
 
 
                 if(
-                    arr.length===2 &&
-                    arr[0]/arr[1]<0.75
+                    data.length === 2 &&
+                    data[0] / data[1] < 0.75
                 ){
 
 
-                    let potion =
+                    const potion =
                     document.querySelector(
                         "#btn-use-potion"
                     )
@@ -971,17 +775,23 @@
 
 
 
-                    if(potion)
+                    if(potion){
+
                         potion.click();
+
+                    }
 
 
                 }
+
 
             }
 
 
 
-            let attack =
+
+
+            const attack =
             document.querySelector(
                 ".attack-btn"
             );
@@ -996,7 +806,8 @@
             ){
 
 
-                let p =
+
+                const p =
                 NetworkOptimizer
                 .getParams();
 
@@ -1004,8 +815,10 @@
 
                 setTimeout(
 
-                    ()=>{
+                    function(){
+
                         attack.click();
+
                     },
 
                     PerformanceCore.getJitter(
@@ -1019,7 +832,9 @@
             }
 
 
+
         }
+
 
 
 
@@ -1029,8 +844,9 @@
 
 
 
+
         setInterval(
-            gameLogic,
+            executeLogic,
             250
         );
 
@@ -1040,6 +856,7 @@
             "✅ TMEngine 啟動"
         );
 
+
     }
 
 
@@ -1047,7 +864,7 @@
 
 
     console.log(
-        "✅ SaveHook 智慧存檔系統完成"
+        "✅ SaveHook 修正版全部載入完成"
     );
 
 
