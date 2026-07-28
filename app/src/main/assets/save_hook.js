@@ -1,107 +1,39 @@
-(function () {
-  if (window.__launcherHookInstalled) return;
-  window.__launcherHookInstalled = true;
+(function() {
+    'use strict';
 
-  function log(msg) {
-    try {
-      if (window.AndroidBridge && AndroidBridge.log) AndroidBridge.log(String(msg));
-    } catch (e) {}
-  }
+    if (window.__IDLE_SAVE_HOOK_LOADED__) return;
+    window.__IDLE_SAVE_HOOK_LOADED__ = true;
 
-  function toast(msg) {
-    try {
-      if (window.AndroidBridge && AndroidBridge.toast) AndroidBridge.toast(String(msg));
-    } catch (e) {}
-  }
+    console.log("🚀 [SaveHook] 線上雙向存檔腳本注入成功！");
 
-  function sendSave(payload, mimeType, fileName) {
-    try {
-      if (window.AndroidBridge && AndroidBridge.saveBase64File) {
-        AndroidBridge.saveBase64File(String(payload || ""), String(mimeType || "application/json"), String(fileName || ""));
-        return true;
-      }
-    } catch (e) {}
-    return false;
-  }
-
-  function exportFromLocalStorage() {
-    try {
-      var keys = Object.keys(localStorage || {});
-      var slots = [];
-
-      keys.forEach(function (k) {
-        var v = localStorage.getItem(k);
-        if (!v) return;
-        if (typeof v === "string" && (v.indexOf("{") === 0 || v.indexOf("[") === 0 || v.indexOf("SIG1:") >= 0)) {
-          slots.push({
-            key: k,
-            label: k
-          });
-        }
-      });
-
-      if (window.AndroidBridge && AndroidBridge.pickSaveSlot) {
-        AndroidBridge.pickSaveSlot(JSON.stringify(slots));
-      } else {
-        toast("找不到原生橋接");
-      }
-    } catch (e) {
-      log("exportFromLocalStorage error: " + e);
-    }
-  }
-
-  window.__exportSlotByKey = function (key) {
-    try {
-      var value = localStorage.getItem(key);
-      if (!value) {
-        toast("找不到存檔：" + key);
-        return;
-      }
-      sendSave(value, "application/json", key + ".json");
-    } catch (e) {
-      log("exportSlotByKey error: " + e);
-    }
-  };
-
-  window.__markExported = function () {
-    log("exported");
-  };
-
-  window.__dumpStorage = function () {
-    try {
-      return JSON.stringify(localStorage, null, 2);
-    } catch (e) {
-      return String(e);
-    }
-  };
-
-  function hookDownloads() {
-    try {
-      var origCreateElement = document.createElement.bind(document);
-      document.createElement = function (tagName) {
-        var el = origCreateElement(tagName);
-        try {
-          if (String(tagName).toLowerCase() === "a") {
-            var origClick = el.click;
-            el.click = function () {
-              try {
-                var href = el.href || "";
-                if (href.indexOf("data:") === 0 || href.indexOf("blob:") === 0) {
-                  log("intercept anchor download: " + href.substring(0, 50));
+    // 1. 攔截網頁觸發的 Blob / Base64 下載，拋給 Android 原生層
+    const originalCreateObjectURL = URL.createObjectURL;
+    URL.createObjectURL = function(blob) {
+        const url = originalCreateObjectURL.apply(this, arguments);
+        if (blob && (blob.type.includes('json') || blob.type.includes('text') || blob.type.includes('octet-stream'))) {
+            const reader = new FileReader();
+            reader.onloadend = function() {
+                const base64data = reader.result;
+                if (window.Android && window.Android.saveBase64File) {
+                    window.Android.saveBase64File(base64data, blob.type || 'application/json', 'idle_save.json');
                 }
-              } catch (e) {}
-              return origClick.apply(el, arguments);
             };
-          }
-        } catch (e) {}
-        return el;
-      };
-    } catch (e) {
-      log("hookDownloads error: " + e);
-    }
-  }
+            reader.readAsDataURL(blob);
+        }
+        return url;
+    };
 
-  hookDownloads();
-  exportFromLocalStorage();
-  log("save_hook loaded");
+    // 2. 提供給 Android 原生層的備援萬用 Dump 機制
+    window.__dumpAllLocalStorage = function() {
+        let dump = {};
+        for (let i = 0; i < localStorage.length; i++) {
+            let key = localStorage.key(i);
+            dump[key] = localStorage.getItem(key);
+        }
+        return JSON.stringify(dump);
+    };
+
+    if (window.Android && window.Android.log) {
+        window.Android.log("SaveHook Ready");
+    }
 })();
