@@ -1,4 +1,4 @@
-package com.idle.lineage.launcher;
+package com.yourpackage.game_launcher;
 
 import android.app.AlertDialog;
 import android.content.ContentValues;
@@ -143,6 +143,7 @@ public class MainActivity extends AppCompatActivity {
         ));
 
         webView = new WebView(this);
+
         RelativeLayout.LayoutParams webLp = new RelativeLayout.LayoutParams(
                 RelativeLayout.LayoutParams.MATCH_PARENT,
                 RelativeLayout.LayoutParams.MATCH_PARENT
