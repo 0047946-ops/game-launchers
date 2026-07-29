@@ -112,15 +112,15 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
 
-                // 注入 save_hook.js
+                // 只注入 save_hook.js
                 String js = loadSaveHookJs();
                 if (js != null && !js.isEmpty()) {
                     view.evaluateJavascript(js, null);
                 }
 
-                // 注入 12.1 Character Discovery Runtime
-                String runtime = PluginRuntime.buildRuntimeScript();
-                view.evaluateJavascript(runtime, null);
+                // PluginRuntime 暫時停用，測試是否影響匯出
+                // String runtime = PluginRuntime.buildRuntimeScript();
+                // view.evaluateJavascript(runtime, null);
             }
 
             @Override
