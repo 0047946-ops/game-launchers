@@ -2,9 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches:
-      - main
-      - character-sync-test
+    branches: [ main ]
 
 jobs:
   build-apk:
