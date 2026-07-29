@@ -1,0 +1,13 @@
+{
+  "latestVersion": "5.7.0",
+  "minimumVersion": "5.5.0",
+  "downloadUrl": "https://github.com/0047946-ops/game-launchers/releases/latest",
+  "forceUpdate": false,
+  "updateLog": [
+    "新增黑金質感 UI",
+    "支援雙外掛與離線掛機",
+    "優化 WebView 效能",
+    "改善存檔安全機制"
+  ],
+  "releaseDate": "2026-07-30"
+}
