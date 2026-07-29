@@ -25,6 +25,8 @@ import androidx.annotation.Keep;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 
+import com.idle.lineage.launcher.plugin.PluginRuntime;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -109,11 +111,16 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                // 只注入 save_hook.js，其餘邏輯都在裡面
+
+                // 注入 save_hook.js
                 String js = loadSaveHookJs();
                 if (js != null && !js.isEmpty()) {
                     view.evaluateJavascript(js, null);
                 }
+
+                // 注入 12.1 Character Discovery Runtime
+                String runtime = PluginRuntime.buildRuntimeScript();
+                view.evaluateJavascript(runtime, null);
             }
 
             @Override
