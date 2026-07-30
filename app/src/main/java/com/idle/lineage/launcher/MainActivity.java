@@ -27,6 +27,8 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.idle.lineage.launcher.plugin.PluginRuntime;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -107,19 +109,17 @@ public class MainActivity extends AppCompatActivity {
         btnServerB.setOnClickListener(v -> launchGame(URL_SERVER_B));
         launcherLayout.addView(btnServerB);
 
-        // 新增：Launcher 手動匯出按鈕
         Button btnExport = new Button(context);
         btnExport.setText("手動匯出存檔");
         btnExport.setOnClickListener(v -> {
             if (webView != null && webView.getVisibility() == View.VISIBLE) {
-                webView.evaluateJavascript("if(window.SaveEngine && typeof window.SaveEngine.export === 'function'){ window.SaveEngine.export(); }else{ alert('請先進入遊戲再執行匯出'); }", null);
+                webView.evaluateJavascript("if(window.SaveEngine){ window.SaveEngine.export(); } else{ alert('SaveEngine未初始化'); }", null);
             } else {
                 Toast.makeText(this, "請先啟動遊戲進入伺服器", Toast.LENGTH_SHORT).show();
             }
         });
         launcherLayout.addView(btnExport);
 
-        // 新增：Launcher 手動匯入按鈕
         Button btnImport = new Button(context);
         btnImport.setText("手動匯入存檔");
         btnImport.setOnClickListener(v -> {
@@ -188,7 +188,12 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                injectAllScripts(view, url);
+                view.postDelayed(() -> {
+                    injectAllScripts(view, url);
+                }, 1000);
+                view.postDelayed(() -> {
+                    injectAllScripts(view, url);
+                }, 8000);
             }
         });
 
@@ -282,11 +287,7 @@ public class MainActivity extends AppCompatActivity {
                                 }
                                 String jsonContent = stringBuilder.toString();
                                 
-                                // 支援多重驗證特徵 (SIG1 / SIG2 / IDLE_LINEAGE_SAVE / afk_backup_bundle_v1)
-                                boolean isValid = jsonContent.contains("IDLE_LINEAGE_SAVE") || 
-                                                  jsonContent.contains("afk_backup_bundle_v1") || 
-                                                  jsonContent.contains("SIG1") || 
-                                                  jsonContent.contains("SIG2");
+                                boolean isValid = jsonContent.trim().startsWith("{") || jsonContent.trim().startsWith("[");
                                 if (!isValid) {
                                     Toast.makeText(this, "錯誤：不是有效存檔", Toast.LENGTH_SHORT).show();
                                     return;
@@ -309,7 +310,6 @@ public class MainActivity extends AppCompatActivity {
                 "if (window.__PLUGIN_URL__ === '" + currentUrl + "') return;" +
                 "window.__PLUGIN_URL__ = '" + currentUrl + "';" +
                 
-                // 強化 SaveEngine v2：完整備份 localStorage，支援 SIG1 / SIG2、afk_backup_bundle_v1 與防特殊字元編碼
                 "window.SaveEngine = {" +
                 "  export: function() {" +
                 "    var dataObj = {};" +
@@ -319,6 +319,22 @@ public class MainActivity extends AppCompatActivity {
                 "        dataObj[k] = localStorage.getItem(k);" +
                 "      }" +
                 "    }" +
+                "    var runtimeData = {};" +
+                "    try {" +
+                "      runtimeData.player = window.player;" +
+                "      runtimeData.character = window.character;" +
+                "      runtimeData.gameData = window.gameData;" +
+                "      runtimeData.saveData = window.saveData;" +
+                "      runtimeData.windowKeys = {};" +
+                "      for(var key in window){" +
+                "        try{" +
+                "          var value = window[key];" +
+                "          if( typeof value === \"object\" && value !== null ){" +
+                "            runtimeData.windowKeys[key] = value;" +
+                "          }" +
+                "        }catch(e){}" +
+                "      }" +
+                "    } catch(e) {}" +
                 "    var pkg = {" +
                 "      type: 'IDLE_LINEAGE_SAVE'," +
                 "      version: 2," +
@@ -327,7 +343,8 @@ public class MainActivity extends AppCompatActivity {
                 "      bundle: 'afk_backup_bundle_v1'," +
                 "      time: new Date().toISOString()," +
                 "      source: 'AndroidContainer'," +
-                "      data: dataObj" +
+                "      data: dataObj," +
+                "      runtime: runtimeData" +
                 "    };" +
                 "    var jsonStr = JSON.stringify(pkg);" +
                 "    if (window.AndroidBridge && typeof window.AndroidBridge.exportGameSave === 'function') {" +
@@ -340,14 +357,28 @@ public class MainActivity extends AppCompatActivity {
                 "      var bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));" +
                 "      var jsonStr = new TextDecoder().decode(bytes);" +
                 "      var pkg = JSON.parse(jsonStr);" +
-                "      var isValid = pkg.type === 'IDLE_LINEAGE_SAVE' || pkg.bundle === 'afk_backup_bundle_v1' || pkg.sig1 || pkg.sig2 || jsonStr.indexOf('SIG1') >= 0 || jsonStr.indexOf('SIG2') >= 0;" +
-                "      if (!isValid) { alert('不是有效存檔'); return; }" +
-                "      var dataObj = pkg.data || pkg;" +
-                "      if (typeof dataObj === 'object' && dataObj !== null) {" +
-                "        for (var k in dataObj) {" +
-                "          if (dataObj.hasOwnProperty(k)) {" +
-                "            localStorage.setItem(k, dataObj[k]);" +
+                "      if (!pkg.type && !pkg.data) {" +
+                "        for (var k in pkg) {" +
+                "          if (pkg.hasOwnProperty(k)) {" +
+                "            localStorage.setItem(k, typeof pkg[k] === 'object' ? JSON.stringify(pkg[k]) : pkg[k]);" +
                 "          }" +
+                "        }" +
+                "      } else {" +
+                "        var isValid = pkg.type === 'IDLE_LINEAGE_SAVE' || pkg.bundle === 'afk_backup_bundle_v1' || pkg.sig1 || pkg.sig2 || jsonStr.indexOf('SIG1') >= 0 || jsonStr.indexOf('SIG2') >= 0 || jsonStr.indexOf('localStorage') >= 0 || jsonStr.indexOf('player') >= 0 || jsonStr.indexOf('character') >= 0;" +
+                "        if (!isValid) { alert('不是有效存檔'); return; }" +
+                "        var dataObj = pkg.data || pkg.save || pkg;" +
+                "        if (typeof dataObj === 'object' && dataObj !== null) {" +
+                "          for (var k in dataObj) {" +
+                "            if (dataObj.hasOwnProperty(k)) {" +
+                "              localStorage.setItem(k, dataObj[k]);" +
+                "            }" +
+                "          }" +
+                "        }" +
+                "        if (pkg.runtime) {" +
+                "          if (pkg.runtime.player) window.player = pkg.runtime.player;" +
+                "          if (pkg.runtime.character) window.character = pkg.runtime.character;" +
+                "          if (pkg.runtime.gameData) window.gameData = pkg.runtime.gameData;" +
+                "          if (pkg.runtime.saveData) window.saveData = pkg.runtime.saveData;" +
                 "        }" +
                 "      }" +
                 "      alert('【還原成功】存檔已寫入，網頁即將重新整理！');" +
@@ -358,7 +389,6 @@ public class MainActivity extends AppCompatActivity {
                 "  }" +
                 "};" +
 
-                // 外掛載入順序：SaveEngine -> save_hook.js -> main.user.js (帶防快取參數)
                 "function loadExternalScript(url, callback) {" +
                 "  var s = document.createElement('script');" +
                 "  s.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();" +
@@ -376,6 +406,13 @@ public class MainActivity extends AppCompatActivity {
                 "})();";
 
         view.evaluateJavascript(initScript, null);
+
+        view.postDelayed(() -> {
+            view.evaluateJavascript(
+                PluginRuntime.buildRuntimeScript(),
+                null
+            );
+        }, 8000);
     }
 
     public class AndroidBridge {
@@ -395,10 +432,7 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public void importGameSave(String json) {
             runOnUiThread(() -> {
-                boolean isValid = json.contains("IDLE_LINEAGE_SAVE") || 
-                                  json.contains("afk_backup_bundle_v1") || 
-                                  json.contains("SIG1") || 
-                                  json.contains("SIG2");
+                boolean isValid = json.trim().startsWith("{") || json.trim().startsWith("[");
                 if (!isValid) {
                     Toast.makeText(MainActivity.this, "錯誤：不是有效存檔", Toast.LENGTH_SHORT).show();
                     return;
@@ -417,6 +451,11 @@ public class MainActivity extends AppCompatActivity {
                 intent.setType("application/json");
                 importFileLauncher.launch(intent);
             });
+        }
+
+        @JavascriptInterface
+        public void logFromJS(String msg) {
+            android.util.Log.d("PluginRuntime", msg);
         }
     }
 
