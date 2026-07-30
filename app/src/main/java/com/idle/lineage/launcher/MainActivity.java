@@ -1,4 +1,4 @@
-package com.idlelineage.container;
+package com.idle.lineage.container;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
