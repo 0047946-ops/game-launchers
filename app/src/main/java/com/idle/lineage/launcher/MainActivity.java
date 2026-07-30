@@ -6,7 +6,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.util.Base64;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
@@ -29,12 +29,12 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.idle.lineage.launcher.plugin.PluginRuntime;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends AppCompatActivity {
+
+    private static final String TAG = "MainActivity";
 
     private WebView webView;
     private LinearLayout launcherLayout;
@@ -44,15 +44,12 @@ public class MainActivity extends AppCompatActivity {
     private ValueCallback<Uri[]> uploadMessage;
     private ActivityResultLauncher<Intent> fileChooserLauncher;
     private ActivityResultLauncher<Intent> exportFileLauncher;
-    private ActivityResultLauncher<Intent> importFileLauncher;
 
     private String pendingExportData = null;
     private String pendingExportFilename = null;
 
     private final String URL_SERVER_A = "https://shines871.github.io/idle-lineage-class/";
     private final String URL_SERVER_B = "https://pp771007.github.io/idle-lineage-class/";
-
-    private final String URL_SAVE_HOOK = "https://raw.githubusercontent.com/0047946-ops/game-launchers/main/app/src/main/assets/save_hook.js";
     private final String URL_MAIN_USER_JS = "https://raw.githubusercontent.com/0047946-ops/game-launchers/main/scripts/main.user.js";
 
     @Override
@@ -87,7 +84,7 @@ public class MainActivity extends AppCompatActivity {
 
         TextView title = new TextView(context);
         title.setText("Idle Lineage Container");
-        title.setTextSize(24);
+        title.setTextSize(22);
         title.setGravity(android.view.Gravity.CENTER);
         title.setPadding(0, 0, 0, 48);
         launcherLayout.addView(title);
@@ -109,27 +106,6 @@ public class MainActivity extends AppCompatActivity {
         btnServerB.setOnClickListener(v -> launchGame(URL_SERVER_B));
         launcherLayout.addView(btnServerB);
 
-        Button btnExport = new Button(context);
-        btnExport.setText("手動匯出存檔");
-        btnExport.setOnClickListener(v -> {
-            if (webView != null && webView.getVisibility() == View.VISIBLE) {
-                webView.evaluateJavascript("if(window.SaveEngine){ window.SaveEngine.export(); } else{ alert('SaveEngine未初始化'); }", null);
-            } else {
-                Toast.makeText(this, "請先啟動遊戲進入伺服器", Toast.LENGTH_SHORT).show();
-            }
-        });
-        launcherLayout.addView(btnExport);
-
-        Button btnImport = new Button(context);
-        btnImport.setText("手動匯入存檔");
-        btnImport.setOnClickListener(v -> {
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("application/json");
-            importFileLauncher.launch(intent);
-        });
-        launcherLayout.addView(btnImport);
-
         root.addView(launcherLayout);
 
         webView = new WebView(context);
@@ -142,21 +118,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showLauncher() {
-        if (webView != null) {
-            webView.setVisibility(View.GONE);
-        }
-        if (launcherLayout != null) {
-            launcherLayout.setVisibility(View.VISIBLE);
-        }
+        if (webView != null) webView.setVisibility(View.GONE);
+        if (launcherLayout != null) launcherLayout.setVisibility(View.VISIBLE);
     }
 
     private void launchGame(String url) {
-        if (launcherLayout != null) {
-            launcherLayout.setVisibility(View.GONE);
-        }
+        if (launcherLayout != null) launcherLayout.setVisibility(View.GONE);
         if (webView != null) {
             webView.setVisibility(View.VISIBLE);
-            webView.loadUrl(url);
+            if (webView.getUrl() == null || !webView.getUrl().equals(url)) {
+                webView.loadUrl(url);
+            }
         }
     }
 
@@ -186,14 +158,15 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                injectScripts(view);
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                view.postDelayed(() -> {
-                    injectAllScripts(view, url);
-                }, 1000);
-                view.postDelayed(() -> {
-                    injectAllScripts(view, url);
-                }, 8000);
+                injectScripts(view);
             }
         });
 
@@ -207,6 +180,9 @@ public class MainActivity extends AppCompatActivity {
                         progressBar.setVisibility(View.VISIBLE);
                         progressBar.setProgress(newProgress);
                     }
+                }
+                if (newProgress > 30) {
+                    injectScripts(view);
                 }
             }
 
@@ -261,10 +237,11 @@ public class MainActivity extends AppCompatActivity {
                                 if (os != null) {
                                     os.write(pendingExportData.getBytes(StandardCharsets.UTF_8));
                                     os.flush();
-                                    Toast.makeText(this, "存檔匯出成功", Toast.LENGTH_SHORT).show();
+                                    Toast.makeText(this, "存檔匯出成功！", Toast.LENGTH_SHORT).show();
                                 }
                             } catch (Exception e) {
-                                Toast.makeText(this, "存檔匯出失敗: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                Log.e(TAG, "寫入檔案失敗: " + e.getMessage(), e);
+                                Toast.makeText(this, "寫入檔案失敗", Toast.LENGTH_SHORT).show();
                             }
                         }
                     }
@@ -272,135 +249,23 @@ public class MainActivity extends AppCompatActivity {
                     pendingExportFilename = null;
                 }
         );
-
-        importFileLauncher = registerForActivityResult(
-                new ActivityResultContracts.StartActivityForResult(),
-                result -> {
-                    if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                        Uri uri = result.getData().getData();
-                        if (uri != null) {
-                            try (BufferedReader reader = new BufferedReader(new InputStreamReader(getContentResolver().openInputStream(uri), StandardCharsets.UTF_8))) {
-                                StringBuilder stringBuilder = new StringBuilder();
-                                String line;
-                                while ((line = reader.readLine()) != null) {
-                                    stringBuilder.append(line);
-                                }
-                                String jsonContent = stringBuilder.toString();
-                                
-                                boolean isValid = jsonContent.trim().startsWith("{") || jsonContent.trim().startsWith("[");
-                                if (!isValid) {
-                                    Toast.makeText(this, "錯誤：不是有效存檔", Toast.LENGTH_SHORT).show();
-                                    return;
-                                }
-
-                                String base64Data = Base64.encodeToString(jsonContent.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-                                String js = "if (window.SaveEngine && typeof window.SaveEngine.restoreBase64 === 'function') { window.SaveEngine.restoreBase64('" + base64Data + "'); } else { alert('SaveEngine 尚未載入'); }";
-                                webView.evaluateJavascript(js, null);
-                            } catch (Exception e) {
-                                Toast.makeText(this, "讀取匯入檔案失敗: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                            }
-                        }
-                    }
-                }
-        );
     }
 
-    private void injectAllScripts(WebView view, String currentUrl) {
+    private void injectScripts(WebView view) {
         String initScript = "javascript:(function() {" +
-                "if (window.__PLUGIN_URL__ === '" + currentUrl + "') return;" +
-                "window.__PLUGIN_URL__ = '" + currentUrl + "';" +
-                
-                "window.SaveEngine = {" +
-                "  export: function() {" +
-                "    var dataObj = {};" +
-                "    for (var i = 0; i < localStorage.length; i++) {" +
-                "      var k = localStorage.key(i);" +
-                "      if (k) {" +
-                "        dataObj[k] = localStorage.getItem(k);" +
-                "      }" +
-                "    }" +
-                "    var runtimeData = {};" +
-                "    try {" +
-                "      runtimeData.player = window.player;" +
-                "      runtimeData.character = window.character;" +
-                "      runtimeData.gameData = window.gameData;" +
-                "      runtimeData.saveData = window.saveData;" +
-                "      runtimeData.windowKeys = {};" +
-                "      for(var key in window){" +
-                "        try{" +
-                "          var value = window[key];" +
-                "          if( typeof value === \"object\" && value !== null ){" +
-                "            runtimeData.windowKeys[key] = value;" +
-                "          }" +
-                "        }catch(e){}" +
-                "      }" +
-                "    } catch(e) {}" +
-                "    var pkg = {" +
-                "      type: 'IDLE_LINEAGE_SAVE'," +
-                "      version: 2," +
-                "      sig1: true," +
-                "      sig2: true," +
-                "      bundle: 'afk_backup_bundle_v1'," +
-                "      time: new Date().toISOString()," +
-                "      source: 'AndroidContainer'," +
-                "      data: dataObj," +
-                "      runtime: runtimeData" +
-                "    };" +
-                "    var jsonStr = JSON.stringify(pkg);" +
-                "    if (window.AndroidBridge && typeof window.AndroidBridge.exportGameSave === 'function') {" +
-                "      window.AndroidBridge.exportGameSave(jsonStr, 'idle_lineage_save_' + Date.now() + '.json');" +
-                "    }" +
-                "  }," +
-                "  restoreBase64: function(base64Str) {" +
-                "    try {" +
-                "      var binString = window.atob(base64Str);" +
-                "      var bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));" +
-                "      var jsonStr = new TextDecoder().decode(bytes);" +
-                "      var pkg = JSON.parse(jsonStr);" +
-                "      if (!pkg.type && !pkg.data) {" +
-                "        for (var k in pkg) {" +
-                "          if (pkg.hasOwnProperty(k)) {" +
-                "            localStorage.setItem(k, typeof pkg[k] === 'object' ? JSON.stringify(pkg[k]) : pkg[k]);" +
-                "          }" +
-                "        }" +
-                "      } else {" +
-                "        var isValid = pkg.type === 'IDLE_LINEAGE_SAVE' || pkg.bundle === 'afk_backup_bundle_v1' || pkg.sig1 || pkg.sig2 || jsonStr.indexOf('SIG1') >= 0 || jsonStr.indexOf('SIG2') >= 0 || jsonStr.indexOf('localStorage') >= 0 || jsonStr.indexOf('player') >= 0 || jsonStr.indexOf('character') >= 0;" +
-                "        if (!isValid) { alert('不是有效存檔'); return; }" +
-                "        var dataObj = pkg.data || pkg.save || pkg;" +
-                "        if (typeof dataObj === 'object' && dataObj !== null) {" +
-                "          for (var k in dataObj) {" +
-                "            if (dataObj.hasOwnProperty(k)) {" +
-                "              localStorage.setItem(k, dataObj[k]);" +
-                "            }" +
-                "          }" +
-                "        }" +
-                "        if (pkg.runtime) {" +
-                "          if (pkg.runtime.player) window.player = pkg.runtime.player;" +
-                "          if (pkg.runtime.character) window.character = pkg.runtime.character;" +
-                "          if (pkg.runtime.gameData) window.gameData = pkg.runtime.gameData;" +
-                "          if (pkg.runtime.saveData) window.saveData = pkg.runtime.saveData;" +
-                "        }" +
-                "      }" +
-                "      alert('【還原成功】存檔已寫入，網頁即將重新整理！');" +
-                "      window.location.reload();" +
-                "    } catch (e) {" +
-                "      alert('還原失敗: ' + e.message);" +
-                "    }" +
-                "  }" +
-                "};" +
+                "if (window.__NATIVE_CONTAINER_INITIALIZED__) return;" +
+                "window.__NATIVE_CONTAINER_INITIALIZED__ = true;" +
 
-                "function loadExternalScript(url, callback) {" +
+                "function loadExternalScript(url, cb) {" +
                 "  var s = document.createElement('script');" +
                 "  s.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();" +
-                "  s.onload = function() { if (callback) callback(); };" +
-                "  s.onerror = function() { console.log('Failed to load script: ' + url); if (callback) callback(); };" +
+                "  s.onload = function() { if (cb) cb(); };" +
+                "  s.onerror = function() { if (cb) cb(); };" +
                 "  document.head.appendChild(s);" +
                 "}" +
 
-                "loadExternalScript('" + URL_SAVE_HOOK + "', function() {" +
-                "  loadExternalScript('" + URL_MAIN_USER_JS + "', function() {" +
-                "    console.log('All hooks and scripts sequence initialized with anti-cache and v2 engine.');" +
-                "  });" +
+                "loadExternalScript('" + URL_MAIN_USER_JS + "', function() {" +
+                "  console.log('[NativeContainer] 主腳本載入完成');" +
                 "});" +
 
                 "})();";
@@ -409,17 +274,30 @@ public class MainActivity extends AppCompatActivity {
 
         view.postDelayed(() -> {
             view.evaluateJavascript(
-                PluginRuntime.buildRuntimeScript(),
+                    PluginRuntime.buildRuntimeScript(),
+                    null
+            );
+        }, 2000);
+    }
+
+    // 正確的 public 宣告，允許原生外部呼叫，只通知執行 window.exportSavePortable(slot)
+    public void requestPortableExport(int slot) {
+        if (webView != null) {
+            webView.evaluateJavascript(
+                "window.exportSavePortable && window.exportSavePortable(" + slot + ");", 
                 null
             );
-        }, 8000);
+        }
     }
 
     public class AndroidBridge {
+
         @JavascriptInterface
-        public void exportGameSave(String json, String filename) {
+        public void saveJson(String json, String filename) {
+            if (json == null || json.isEmpty()) return;
             pendingExportData = json;
-            pendingExportFilename = filename != null ? filename : "idle_lineage_save.json";
+            pendingExportFilename = (filename != null && !filename.isEmpty()) ? filename : "game_save.json";
+
             runOnUiThread(() -> {
                 Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -427,35 +305,6 @@ public class MainActivity extends AppCompatActivity {
                 intent.putExtra(Intent.EXTRA_TITLE, pendingExportFilename);
                 exportFileLauncher.launch(intent);
             });
-        }
-
-        @JavascriptInterface
-        public void importGameSave(String json) {
-            runOnUiThread(() -> {
-                boolean isValid = json.trim().startsWith("{") || json.trim().startsWith("[");
-                if (!isValid) {
-                    Toast.makeText(MainActivity.this, "錯誤：不是有效存檔", Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                String base64Data = Base64.encodeToString(json.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-                String js = "if (window.SaveEngine && typeof window.SaveEngine.restoreBase64 === 'function') { window.SaveEngine.restoreBase64('" + base64Data + "'); }";
-                webView.evaluateJavascript(js, null);
-            });
-        }
-
-        @JavascriptInterface
-        public void triggerImportFilePicker() {
-            runOnUiThread(() -> {
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("application/json");
-                importFileLauncher.launch(intent);
-            });
-        }
-
-        @JavascriptInterface
-        public void logFromJS(String msg) {
-            android.util.Log.d("PluginRuntime", msg);
         }
     }
 
