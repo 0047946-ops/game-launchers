@@ -20,7 +20,22 @@ public class PluginRuntime {
 
         sb.append("log('12.1 Character Discovery Started');\n");
 
-        sb.append("var keys=['player','character','gameData','saveData','GameState','save','g_save','game'];\n");
+        sb.append("var keys=[\n");
+        sb.append("'player',");
+        sb.append("'character',");
+        sb.append("'gameData',");
+        sb.append("'saveData',");
+        sb.append("'GameState',");
+        sb.append("'save',");
+        sb.append("'g_save',");
+        sb.append("'game',");
+        sb.append("'account',");
+        sb.append("'user',");
+        sb.append("'role',");
+        sb.append("'hero',");
+        sb.append("'playerData',");
+        sb.append("'characterData'");
+        sb.append("];\n");
 
         sb.append("var checked={};\n");
 
@@ -33,10 +48,13 @@ public class PluginRuntime {
         sb.append("  if(window[k]!==undefined && !checked['window.'+k]){\n");
 
         sb.append("   checked['window.'+k]=true;\n");
+
         sb.append("   try{\n");
         sb.append("    log('[FOUND] window.'+k);\n");
-        sb.append("    log(JSON.stringify(window[k]).substring(0,200));\n");
-        sb.append("   }catch(e){}\n");
+        sb.append("    log(JSON.stringify(window[k]).substring(0,300));\n");
+        sb.append("   }catch(e){\n");
+        sb.append("    log('[ERROR] '+k);\n");
+        sb.append("   }\n");
 
         sb.append("  }\n");
 
@@ -59,7 +77,8 @@ public class PluginRuntime {
         sb.append("     checked[label]=true;\n");
 
         sb.append("     log('[FOUND] '+label);\n");
-        sb.append("     log(value.substring(0,200));\n");
+
+        sb.append("     log(value.substring(0,300));\n");
 
         sb.append("    }\n");
 
@@ -67,15 +86,20 @@ public class PluginRuntime {
 
         sb.append("  }\n");
 
-        sb.append(" }catch(e){}\n");
+        sb.append(" }catch(e){\n");
+        sb.append("  log('[localStorage ERROR]');\n");
+        sb.append(" }\n");
 
 
         sb.append("},2000);\n");
 
 
         sb.append("setTimeout(function(){\n");
+
         sb.append(" clearInterval(timer);\n");
+
         sb.append(" log('Discovery finished');\n");
+
         sb.append("},40000);\n");
 
 
