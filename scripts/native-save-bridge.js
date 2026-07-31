@@ -3,14 +3,14 @@
 "use strict";
 
 
-if(window.__native_save_bridge_loaded){
+if(window.__NativeSaveBridgeLoaded){
 
     return;
 
 }
 
 
-window.__native_save_bridge_loaded = true;
+window.__NativeSaveBridgeLoaded = true;
 
 
 
@@ -24,8 +24,9 @@ console.log(
 
 function sendToAndroid(
     data,
-    name
+    fileName
 ){
+
 
     try{
 
@@ -33,29 +34,27 @@ function sendToAndroid(
         if(
             window.AndroidBridge
             &&
-            AndroidBridge.saveBase64File
+            typeof window.AndroidBridge.saveBase64File
+            ===
+            "function"
         ){
 
 
-            AndroidBridge.saveBase64File(
-
+            window.AndroidBridge.saveBase64File(
                 data,
-
-                name ||
+                fileName ||
                 "idle_lineage_save.json"
-
             );
 
 
             console.log(
-                "[NativeSaveBridge] sent"
+                "[NativeSaveBridge] send success"
             );
 
 
             return true;
 
         }
-
 
 
     }catch(e){
@@ -80,9 +79,11 @@ function sendToAndroid(
 
 
 
-/*
-    攔截 Blob
-*/
+
+
+// =============================
+// 攔截 Blob 匯出
+// =============================
 
 
 const oldCreateObjectURL =
@@ -92,6 +93,7 @@ const oldCreateObjectURL =
 
 URL.createObjectURL =
 function(blob){
+
 
 
     try{
@@ -110,6 +112,7 @@ function(blob){
         ){
 
 
+
             let reader =
                 new FileReader();
 
@@ -120,11 +123,8 @@ function(blob){
 
 
                 sendToAndroid(
-
                     reader.result,
-
                     "idle_lineage_save.json"
-
                 );
 
 
@@ -132,25 +132,22 @@ function(blob){
 
 
 
-            reader.readAsDataURL(blob);
+            reader.readAsDataURL(
+                blob
+            );
+
 
 
         }
 
 
-
     }catch(e){
 
 
-
-        console.error(
-            e
-        );
+        console.error(e);
 
 
     }
-
-
 
 
 
@@ -169,12 +166,71 @@ function(blob){
 
 
 
-/*
-    遊戲主動呼叫
+// =============================
+// 攔截 download link
+// =============================
 
-    window.exportNativeSave(data)
 
-*/
+document.addEventListener(
+"click",
+function(e){
+
+
+    let target =
+        e.target;
+
+
+
+    if(
+        target
+        &&
+        target.tagName
+        ===
+        "A"
+    ){
+
+
+        let href =
+            target.href;
+
+
+
+        if(
+            href
+            &&
+            (
+                href.startsWith("blob:")
+                ||
+                href.startsWith("data:")
+            )
+        ){
+
+
+            console.log(
+                "[NativeSaveBridge] download detected"
+            );
+
+
+        }
+
+
+    }
+
+
+
+},
+true);
+
+
+
+
+
+
+
+
+// =============================
+// 提供遊戲呼叫
+// =============================
 
 
 window.exportNativeSave =
@@ -182,74 +238,14 @@ function(data){
 
 
     return sendToAndroid(
-
         data,
-
         "idle_lineage_save.json"
-
     );
 
 
 };
 
 
-
-
-
-
-/*
-    攔截下載按鈕
-
-*/
-
-
-const oldClick =
-HTMLAnchorElement.prototype.click;
-
-
-
-HTMLAnchorElement.prototype.click =
-function(){
-
-
-    try{
-
-
-        if(
-            this.href
-            &&
-            (
-                this.href.startsWith("blob:")
-                ||
-                this.href.startsWith("data:")
-            )
-        ){
-
-
-            sendToAndroid(
-
-                this.href,
-
-                "idle_lineage_save.json"
-
-            );
-
-
-        }
-
-
-
-    }catch(e){}
-
-
-
-    return oldClick.apply(
-        this,
-        arguments
-    );
-
-
-};
 
 
 
