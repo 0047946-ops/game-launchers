@@ -1,6 +1,8 @@
 package com.idle.lineage.launcher;
 
 import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 import android.webkit.JavascriptInterface;
@@ -15,11 +17,13 @@ public class AndroidBridge {
 
     private final WebView webView;
 
-
     private final Handler handler =
             new Handler(
                     Looper.getMainLooper()
             );
+
+
+    private final SharedPreferences prefs;
 
 
 
@@ -32,17 +36,24 @@ public class AndroidBridge {
 
         this.webView = webView;
 
+
+        prefs =
+                activity.getSharedPreferences(
+                        "launcher",
+                        Context.MODE_PRIVATE
+                );
+
     }
 
 
 
 
-    // 啟動遊戲網址
+    /*
+        啟動遊戲網址
+    */
 
     @JavascriptInterface
-    public void launchGame(
-            String url
-    ){
+    public void launchGame(String url){
 
 
         handler.post(() -> {
@@ -60,31 +71,77 @@ public class AndroidBridge {
 
 
 
-    // 外掛網址注入
+    /*
+        儲存外掛網址
+    */
 
     @JavascriptInterface
-    public void injectPluginUrl(
+    public void savePluginUrl(
             String url
     ){
 
 
-        handler.post(() -> {
+        if(url == null ||
+                url.trim().isEmpty()){
 
 
-            PluginRuntime.injectPluginUrl(
-                    webView,
-                    url
-            );
+            return;
+
+        }
 
 
-            Toast.makeText(
-                    activity,
-                    "🔌 外掛載入完成",
-                    Toast.LENGTH_SHORT
-            ).show();
+
+        String old =
+                prefs.getString(
+                        "plugins",
+                        ""
+                );
 
 
-        });
+
+        if(!old.contains(url)){
+
+
+            String result;
+
+
+            if(old.isEmpty()){
+
+
+                result = url;
+
+
+            }else{
+
+
+                result =
+                        old
+                        + "\n"
+                        + url;
+
+
+            }
+
+
+
+            prefs.edit()
+                    .putString(
+                            "plugins",
+                            result
+                    )
+                    .apply();
+
+
+
+        }
+
+
+
+        handler.post(() -> Toast.makeText(
+                activity,
+                "✅ 外掛已保存",
+                Toast.LENGTH_SHORT
+        ).show());
 
 
     }
@@ -93,8 +150,48 @@ public class AndroidBridge {
 
 
 
+    /*
+        提供給 MainActivity 讀取
+    */
 
-    // 核心：匯出存檔
+    @JavascriptInterface
+    public String getPluginUrls(){
+
+
+        return prefs.getString(
+                "plugins",
+                ""
+        );
+
+
+    }
+
+
+
+
+
+    /*
+        移除全部外掛
+    */
+
+    @JavascriptInterface
+    public void clearPlugins(){
+
+
+        prefs.edit()
+                .remove("plugins")
+                .apply();
+
+
+    }
+
+
+
+
+
+    /*
+        存檔匯出
+    */
 
     @JavascriptInterface
     public void saveBase64File(
@@ -114,14 +211,6 @@ public class AndroidBridge {
             );
 
 
-            Toast.makeText(
-                    activity,
-                    "✅ 存檔匯出完成",
-                    Toast.LENGTH_SHORT
-            ).show();
-
-
-
         });
 
 
@@ -131,32 +220,9 @@ public class AndroidBridge {
 
 
 
-    // 測試用
-
-    @JavascriptInterface
-    public void toast(
-            String msg
-    ){
-
-
-        handler.post(() -> {
-
-
-            Toast.makeText(
-                    activity,
-                    msg,
-                    Toast.LENGTH_SHORT
-            ).show();
-
-
-        });
-
-
-    }
-
-
-
-
+    /*
+        日誌
+    */
 
     @JavascriptInterface
     public void log(
@@ -168,6 +234,29 @@ public class AndroidBridge {
                 "AndroidBridge",
                 msg
         );
+
+
+    }
+
+
+
+
+
+    /*
+        Toast
+    */
+
+    @JavascriptInterface
+    public void toast(
+            String msg
+    ){
+
+
+        handler.post(() -> Toast.makeText(
+                activity,
+                msg,
+                Toast.LENGTH_SHORT
+        ).show());
 
 
     }
