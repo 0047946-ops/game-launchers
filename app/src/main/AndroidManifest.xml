@@ -1,31 +1,91 @@
 <?xml version="1.0" encoding="utf-8"?>
+
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+
+    <!-- 網頁遊戲需要 -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+
+
+    <!-- Android 9 以下存檔 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+
+
     <application
+
+
         android:allowBackup="true"
-        android:label="放置天堂多功能外掛啟動器"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+
         android:usesCleartextTraffic="true"
-        android:hardwareAccelerated="true">
+
+        android:label="放置天堂 Launcher"
+
+        android:theme="@style/AppTheme"
+
+        android:requestLegacyExternalStorage="true"
+
+        >
+
+
+
 
         <activity
+
             android:name=".MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:hardwareAccelerated="true">
+
+            android:exported="true">
+
+
             <intent-filter>
+
+
                 <action android:name="android.intent.action.MAIN" />
+
+
                 <category android:name="android.intent.category.LAUNCHER" />
+
+
             </intent-filter>
+
+
         </activity>
 
-        <!-- 若之後要用分享存檔功能再保留，暫時可先不加 FileProvider -->
+
+
+
+
+        <!-- 存檔分享與匯出 -->
+
+        <provider
+
+            android:name="androidx.core.content.FileProvider"
+
+            android:authorities="${applicationId}.fileprovider"
+
+            android:exported="false"
+
+            android:grantUriPermissions="true">
+
+
+            <meta-data
+
+                android:name="android.support.FILE_PROVIDER_PATHS"
+
+                android:resource="@xml/file_paths" />
+
+
+        </provider>
+
+
+
+
     </application>
+
+
+
 </manifest>
