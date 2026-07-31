@@ -8,6 +8,7 @@ import android.webkit.WebView;
 import android.widget.Toast;
 
 public class AndroidBridge {
+
     private final Activity activity;
     private final WebView webView;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -25,13 +26,32 @@ public class AndroidBridge {
     @JavascriptInterface
     public void injectPluginUrl(String url) {
         mainHandler.post(() -> {
-            PluginRuntime.injectPluginUrl(webView, url);
-            Toast.makeText(activity, "🔗 外掛網址已注入", Toast.LENGTH_SHORT).show();
+            com.idle.lineage.launcher.plugin.PluginRuntime.injectPluginUrl(webView, url);
+            Toast.makeText(activity, "外掛已載入", Toast.LENGTH_SHORT).show();
         });
     }
 
     @JavascriptInterface
-    public void saveBase64File(String dataUrlOrBase64, String fileName) {
-        mainHandler.post(() -> SaveManager.processAndSaveFile(activity, dataUrlOrBase64, "application/json", fileName));
+    public void saveBase64File(String data, String fileName) {
+        mainHandler.post(() ->
+                SaveManager.processAndSaveFile(
+                        activity,
+                        data,
+                        "application/json",
+                        fileName
+                )
+        );
+    }
+
+    @JavascriptInterface
+    public void toast(String text) {
+        mainHandler.post(() ->
+                Toast.makeText(activity, text, Toast.LENGTH_SHORT).show()
+        );
+    }
+
+    @JavascriptInterface
+    public void log(String text) {
+        android.util.Log.d("AndroidBridge", text);
     }
 }
