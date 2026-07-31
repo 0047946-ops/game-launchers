@@ -1,10 +1,10 @@
-name: Build Android APK (Auto Gradle)
+name: Build Android APK (Stable Gradle 8.4)
 
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+on:  
+  push:  
+    branches:  
+      - main  
+      - character-sync-test
 
 jobs:
   build:
@@ -20,10 +20,12 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Setup Gradle
+    - name: Setup Gradle (Lock to 8.4)
       uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.4'
 
-    - name: Build Debug APK with System Gradle
+    - name: Build Debug APK with Gradle 8.4
       run: gradle assembleDebug
 
     - name: Upload APK Artifact
