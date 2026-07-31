@@ -1,97 +1,389 @@
 package com.idle.lineage.launcher;
 
+
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
-import android.widget.Toast;
 
-import java.io.File;
-import java.io.FileOutputStream;
+
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.net.URLDecoder;
+
+
 
 public class SaveManager {
-    private static final String TAG = "SaveManager";
 
-    public static void processAndSaveFile(Context context, String dataUrlOrBase64, String mimeType, String fileName) {
-        if (dataUrlOrBase64 == null || dataUrlOrBase64.isEmpty() || dataUrlOrBase64.startsWith("blob:")) return;
-        try {
-            byte[] bytes;
-            if (dataUrlOrBase64.contains("SIG1:")) {
-                String sigData = dataUrlOrBase64.substring(dataUrlOrBase64.indexOf("SIG1:")).trim();
-                bytes = sigData.getBytes(StandardCharsets.UTF_8);
-            } else if (dataUrlOrBase64.trim().startsWith("{") || dataUrlOrBase64.trim().startsWith("[")) {
-                bytes = dataUrlOrBase64.trim().getBytes(StandardCharsets.UTF_8);
-            } else if (dataUrlOrBase64.startsWith("data:")) {
-                int commaIndex = dataUrlOrBase64.indexOf(",");
-                if (commaIndex != -1) {
-                    String content = dataUrlOrBase64.substring(commaIndex + 1);
-                    bytes = Base64.decode(content, Base64.DEFAULT);
-                } else {
-                    bytes = dataUrlOrBase64.getBytes(StandardCharsets.UTF_8);
-                }
-            } else {
-                bytes = Base64.decode(dataUrlOrBase64, Base64.DEFAULT);
+
+    private static final String TAG =
+            "SaveManager";
+
+
+    public static void processAndSaveFile(
+            Context context,
+            String data,
+            String mimeType,
+            String fileName
+    ){
+
+
+        try{
+
+
+            byte[] bytes =
+                    decodeData(data);
+
+
+
+            if(fileName == null
+                    ||
+               fileName.isEmpty()){
+
+
+                fileName =
+                        "idle_lineage_save_"
+                        +
+                        System.currentTimeMillis()
+                        +
+                        ".json";
+
+
             }
 
-            fileName = buildSaveFileName(fileName);
-            if (writeToDownloads(context, bytes, fileName, mimeType)) {
-                Toast.makeText(context, "✅ 存檔匯出成功：" + fileName, Toast.LENGTH_LONG).show();
-            } else {
-                Toast.makeText(context, "❌ 存檔匯出失敗", Toast.LENGTH_SHORT).show();
+
+
+            if(!fileName.endsWith(".json")){
+
+
+                fileName += ".json";
+
+
             }
-        } catch (Exception e) {
-            Log.e(TAG, "解析存檔失敗: " + e.getMessage());
+
+
+
+            boolean result =
+                    saveFile(
+                            context,
+                            bytes,
+                            fileName,
+                            mimeType
+                    );
+
+
+
+            Log.d(
+                    TAG,
+                    "save result = "
+                    + result
+            );
+
+
+
+        }catch(Exception e){
+
+
+            Log.e(
+                    TAG,
+                    "save error",
+                    e
+            );
+
+
         }
+
+
     }
 
-    private static boolean writeToDownloads(Context context, byte[] bytes, String fileName, String mimeType) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            try {
-                ContentValues values = new ContentValues();
-                values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
-                values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
-                values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-                values.put(MediaStore.Downloads.IS_PENDING, 1);
-                Uri uri = context.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                if (uri != null) {
-                    try (OutputStream os = context.getContentResolver().openOutputStream(uri)) {
-                        if (os != null) {
-                            os.write(bytes);
-                            os.flush();
-                        }
-                    }
-                    values.clear();
-                    values.put(MediaStore.Downloads.IS_PENDING, 0);
-                    context.getContentResolver().update(uri, values, null, null);
+
+
+
+
+
+
+    private static byte[] decodeData(
+            String data
+    )
+    throws Exception{
+
+
+        if(data == null){
+
+
+            return "{}"
+                    .getBytes(
+                            StandardCharsets.UTF_8
+                    );
+
+
+        }
+
+
+
+        data =
+                data.trim();
+
+
+
+
+
+        // SIG1
+
+        if(data.startsWith("SIG1:")){
+
+
+            return data.getBytes(
+                    StandardCharsets.UTF_8
+            );
+
+
+        }
+
+
+
+
+
+        // JSON
+
+        if(
+                data.startsWith("{")
+                ||
+                data.startsWith("[")
+        ){
+
+
+            return data.getBytes(
+                    StandardCharsets.UTF_8
+            );
+
+
+        }
+
+
+
+
+
+
+
+        // Data URL
+
+        if(data.startsWith("data:")){
+
+
+            int index =
+                    data.indexOf(",");
+
+
+
+            if(index > 0){
+
+
+                String header =
+                        data.substring(
+                                0,
+                                index
+                        );
+
+
+
+                String body =
+                        data.substring(
+                                index + 1
+                        );
+
+
+
+                if(
+                    header.contains(
+                            ";base64"
+                    )
+                ){
+
+
+                    return Base64.decode(
+                            body,
+                            Base64.DEFAULT
+                    );
+
+
+                }
+                else{
+
+
+                    return URLDecoder
+                            .decode(
+                                    body,
+                                    "UTF-8"
+                            )
+                            .getBytes(
+                                    StandardCharsets.UTF_8
+                            );
+
+
+                }
+
+
+            }
+
+
+        }
+
+
+
+
+
+
+
+        // Base64
+
+        try{
+
+
+            return Base64.decode(
+                    data,
+                    Base64.DEFAULT
+            );
+
+
+        }catch(Exception e){
+
+
+
+            return data.getBytes(
+                    StandardCharsets.UTF_8
+            );
+
+
+        }
+
+
+
+    }
+
+
+
+
+
+
+
+
+    private static boolean saveFile(
+            Context context,
+            byte[] bytes,
+            String fileName,
+            String mimeType
+    ){
+
+
+
+        try{
+
+
+
+            if(Build.VERSION.SDK_INT
+                    >=
+               Build.VERSION_CODES.Q){
+
+
+
+                ContentValues values =
+                        new ContentValues();
+
+
+
+                values.put(
+                        MediaStore.Downloads.DISPLAY_NAME,
+                        fileName
+                );
+
+
+
+                values.put(
+                        MediaStore.Downloads.MIME_TYPE,
+                        "application/json"
+                );
+
+
+
+                values.put(
+                        MediaStore.Downloads.RELATIVE_PATH,
+                        Environment.DIRECTORY_DOWNLOADS
+                );
+
+
+
+                Uri uri =
+                        context
+                        .getContentResolver()
+                        .insert(
+                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                values
+                        );
+
+
+
+                if(uri == null){
+
+
+                    return false;
+
+
+                }
+
+
+
+                OutputStream os =
+                        context
+                        .getContentResolver()
+                        .openOutputStream(uri);
+
+
+
+                if(os != null){
+
+
+                    os.write(bytes);
+
+                    os.flush();
+
+                    os.close();
+
+
                     return true;
+
+
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "MediaStore 寫入失敗", e);
+
+
+
             }
-            return false;
+
+
+
+        }catch(Exception e){
+
+
+            Log.e(
+                    TAG,
+                    "write error",
+                    e
+            );
+
+
         }
-        try {
-            File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-            File file = new File(downloadsDir, fileName);
-            try (FileOutputStream fos = new FileOutputStream(file)) {
-                fos.write(bytes);
-                fos.flush();
-            }
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
+
+
+
+        return false;
+
+
     }
 
-    private static String buildSaveFileName(String rawName) {
-        String base = (rawName == null || rawName.isEmpty()) ? "存檔_" + System.currentTimeMillis() : rawName;
-        return base.replaceAll("[\\\\/:*?\"<>|]", "_") + ".json";
-    }
+
+
 }
