@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>放置天堂 - 跨平台商業級遊戲啟動器</title>
+    <style>
+        body { background: #121212; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 90vh; }
+        .container { width: 100%; max-width: 420px; }
+        .box { background: #1e1e1e; padding: 20px; border-radius: 14px; margin-bottom: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); border: 1px solid #2c2c2e; }
+        h2 { font-size: 18px; margin-top: 0; color: #4cd964; display: flex; align-items: center; gap: 8px; }
+        h3 { font-size: 15px; margin-top: 0; color: #00adb5; }
+        label { display: block; margin-bottom: 6px; font-size: 13px; color: #8e8e93; font-weight: bold; }
+        select, input, button { width: 100%; padding: 12px; box-sizing: border-box; border-radius: 8px; border: 1px solid #3a3a3c; background: #2c2c2e; color: #fff; font-size: 14px; margin-top: 6px; outline: none; }
+        .custom-input-group { display: none; margin-top: 8px; }
+        button { background: #28a745; color: white; border: none; font-weight: bold; cursor: pointer; margin-top: 12px; box-shadow: 0 4px 12px rgba(40,167,69,0.3); transition: background 0.2s; }
+        button:active { background: #218838; }
+        .btn-secondary { background: #007aff; box-shadow: 0 4px 12px rgba(0,122,255,0.3); }
+        .footer-note { text-align: center; font-size: 11px; color: #636366; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="box">
+        <h2>🎮 遊戲啟動器 Launcher</h2>
+        <label>選擇遊戲伺服器：</label>
+        <select id="gameUrl" onchange="handleServerChange()">
+            <option value="https://shines871.github.io/idle-lineage-class/">伺服器二 (shines871)</option>
+            <option value="https://pp771007.github.io/idle-lineage-class/">伺服器一 (pp771007)</option>
+            <option value="custom">自訂遊戲網址</option>
+        </select>
+        <div id="customGroup" class="custom-input-group">
+            <input type="text" id="customUrl" placeholder="請輸入完整網址 (https://...)">
+        </div>
+        <button onclick="startGame()">🚀 啟動遊戲</button>
+    </div>
+
+    <div class="box">
+        <h3>🔌 開放式外掛與擴充管理</h3>
+        <label>外掛網址連結 (URL)：</label>
+        <input type="text" id="pluginUrl" placeholder="輸入 .js 外掛網址">
+        <button class="btn-secondary" onclick="addPluginUrl()">載入外掛網址</button>
+
+        <label style="margin-top: 14px;">書籤連結 (Bookmarklet)：</label>
+        <input type="text" id="bookmarkJs" placeholder="javascript:(function(){...})()">
+        <button class="btn-secondary" onclick="executeBookmark()">執行書籤腳本</button>
+
+        <label style="margin-top: 14px;">上傳外掛檔案 (JS)：</label>
+        <input type="file" id="pluginFile" accept=".js" style="padding: 8px;" onchange="uploadPluginFile(event)">
+    </div>
+
+    <div class="footer-note">
+        本軟體僅提供網頁框架與原生存檔輔助，不主動提供或內建任何外掛內容。
+    </div>
+</div>
+
+<script>
+    function handleServerChange() {
+        const val = document.getElementById("gameUrl").value;
+        const customGroup = document.getElementById("customGroup");
+        customGroup.style.display = (val === "custom") ? "block" : "none";
+    }
+
+    function startGame() {
+        let selectVal = document.getElementById("gameUrl").value;
+        let targetUrl = (selectVal === "custom") ? document.getElementById("customUrl").value.trim() : selectVal;
+        
+        if (!targetUrl) {
+            alert("請選擇或輸入有效的遊戲網址！");
+            return;
+        }
+
+        if (window.AndroidBridge && typeof window.AndroidBridge.launchGame === 'function') {
+            window.AndroidBridge.launchGame(targetUrl);
+        } else {
+            location.href = targetUrl;
+        }
+    }
+
+    function addPluginUrl() {
+        const url = document.getElementById("pluginUrl").value.trim();
+        if (!url) { alert("請輸入外掛網址"); return; }
+        if (window.AndroidBridge && typeof window.AndroidBridge.injectPluginUrl === 'function') {
+            window.AndroidBridge.injectPluginUrl(url);
+        } else {
+            const s = document.createElement('script');
+            s.src = url + '?v=' + Date.now();
+            document.body.appendChild(s);
+            alert("已透過網頁端動態載入外掛網址");
+        }
+    }
+
+    function executeBookmark() {
+        let js = document.getElementById("bookmarkJs").value.trim();
+        if (!js) { alert("請輸入書籤腳本"); return; }
+        if (!js.toLowerCase().startsWith("javascript:")) {
+            js = "javascript:" + js;
+        }
+        try {
+            eval(js.replace("javascript:", ""));
+            alert("書籤腳本執行成功");
+        } catch (e) {
+            alert("書籤執行失敗：" + e.message);
+        }
+    }
+
+    function uploadPluginFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const code = e.target.result;
+            try {
+                const s = document.createElement('script');
+                s.textContent = code;
+                document.body.appendChild(s);
+                alert("🎉 成功上傳並注入外掛檔案：" + file.name);
+            } catch (err) {
+                alert("❌ 外掛檔案執行失敗：" + err.message);
+            }
+        };
+        reader.readAsText(file);
+    }
+</script>
+
+</body>
+</html>
