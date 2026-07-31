@@ -50,3 +50,10 @@
 
 </body>
 </html>
+<script>
+  // 將手機 WebView 內部的錯誤直接彈窗顯示，不用接電腦也能看！
+  window.onerror = function(msg, url, line) {
+    alert("❌ 網頁 JS 錯誤: " + msg + "\n行號: " + line);
+    return true;
+  };
+</script>
