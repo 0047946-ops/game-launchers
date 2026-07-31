@@ -15,8 +15,11 @@ public class AndroidBridge {
 
     private final WebView webView;
 
+
     private final Handler handler =
-            new Handler(Looper.getMainLooper());
+            new Handler(
+                    Looper.getMainLooper()
+            );
 
 
 
@@ -34,21 +37,22 @@ public class AndroidBridge {
 
 
 
-
-    /*
-        啟動遊戲網址
-    */
+    // 啟動遊戲網址
 
     @JavascriptInterface
     public void launchGame(
             String url
     ){
 
+
         handler.post(() -> {
+
 
             webView.loadUrl(url);
 
+
         });
+
 
     }
 
@@ -56,14 +60,13 @@ public class AndroidBridge {
 
 
 
-    /*
-        外掛網址注入
-    */
+    // 外掛網址注入
 
     @JavascriptInterface
     public void injectPluginUrl(
             String url
     ){
+
 
         handler.post(() -> {
 
@@ -76,12 +79,13 @@ public class AndroidBridge {
 
             Toast.makeText(
                     activity,
-                    "🔌 外掛已載入",
+                    "🔌 外掛載入完成",
                     Toast.LENGTH_SHORT
             ).show();
 
 
         });
+
 
     }
 
@@ -89,21 +93,15 @@ public class AndroidBridge {
 
 
 
-    /*
-        存檔匯出入口
 
-        支援:
-        data:
-        base64
-        SIG1
-        JSON
-    */
+    // 核心：匯出存檔
 
     @JavascriptInterface
     public void saveBase64File(
             String data,
             String fileName
     ){
+
 
         handler.post(() -> {
 
@@ -118,95 +116,11 @@ public class AndroidBridge {
 
             Toast.makeText(
                     activity,
-                    "📥 存檔匯出完成",
+                    "✅ 存檔匯出完成",
                     Toast.LENGTH_SHORT
             ).show();
 
 
-        });
-
-
-    }
-
-
-
-
-
-    /*
-        取得 WebView LocalStorage
-
-        用於人物資料同步
-    */
-
-    @JavascriptInterface
-    public void getLocalStorage(){
-
-        handler.post(() -> {
-
-
-            webView.evaluateJavascript(
-
-                    "(function(){"
-                    +"return JSON.stringify(localStorage);"
-                    +"})()",
-
-
-                    value -> {
-
-
-                        Toast.makeText(
-                                activity,
-                                "LocalStorage 已讀取",
-                                Toast.LENGTH_SHORT
-                        ).show();
-
-
-                    }
-
-            );
-
-
-        });
-
-    }
-
-
-
-
-
-    /*
-        寫入 LocalStorage
-
-        匯入角色資料用
-    */
-
-    @JavascriptInterface
-    public void setLocalStorage(
-            String key,
-            String value
-    ){
-
-        handler.post(() -> {
-
-
-            String js =
-
-                    "localStorage.setItem("
-                    +"'"
-                    + key.replace("'","\\'")
-                    +"',"
-                    +"'"
-                    + value.replace("'","\\'")
-                    +"'"
-                    +");";
-
-
-
-            webView.evaluateJavascript(
-                    js,
-                    null
-            );
-
 
         });
 
@@ -217,21 +131,20 @@ public class AndroidBridge {
 
 
 
-    /*
-        訊息
-    */
+    // 測試用
 
     @JavascriptInterface
     public void toast(
-            String message
+            String msg
     ){
+
 
         handler.post(() -> {
 
 
             Toast.makeText(
                     activity,
-                    message,
+                    msg,
                     Toast.LENGTH_SHORT
             ).show();
 
@@ -245,18 +158,15 @@ public class AndroidBridge {
 
 
 
-    /*
-        Log
-    */
-
     @JavascriptInterface
     public void log(
-            String message
+            String msg
     ){
+
 
         android.util.Log.d(
                 "AndroidBridge",
-                message
+                msg
         );
 
 
