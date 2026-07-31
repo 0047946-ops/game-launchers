@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>放置天堂 - 跨平台商業級遊戲啟動器</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="container">
+    <div class="box">
+        <h2>🎮 遊戲啟動器 Launcher</h2>
+        <label>選擇遊戲伺服器：</label>
+        <select id="gameUrl" onchange="handleServerChange()">
+            <option value="https://shines871.github.io/idle-lineage-class/">伺服器二 (shines871)</option>
+            <option value="https://pp771007.github.io/idle-lineage-class/">伺服器一 (pp771007)</option>
+            <option value="custom">自訂遊戲網址</option>
+        </select>
+        <div id="customGroup" class="custom-input-group" style="display:none;">
+            <input type="text" id="customUrl" placeholder="請輸入完整網址 (https://...)">
+        </div>
+        <button onclick="startGame()">🚀 啟動遊戲</button>
+    </div>
+
+    <div class="box">
+        <h3>🔌 開放式外掛與擴充管理</h3>
+        <label>外掛網址連結 (URL)：</label>
+        <input type="text" id="pluginUrl" placeholder="輸入 .js 外掛網址">
+        <button class="btn-secondary" onclick="addPluginUrl()">載入外掛網址</button>
+
+        <label style="margin-top: 14px;">書籤連結 (Bookmarklet)：</label>
+        <input type="text" id="bookmarkJs" placeholder="javascript:(function(){...})()">
+        <button class="btn-secondary" onclick="executeBookmark()">執行書籤腳本</button>
+
+        <label style="margin-top: 14px;">上傳外掛檔案 (JS)：</label>
+        <input type="file" id="pluginFile" accept=".js" style="padding: 8px;" onchange="uploadPluginFile(event)">
+    </div>
+
+    <div class="footer-note">
+        本軟體僅提供網頁框架與原生存檔輔助，不主動提供或內建任何外掛內容。
+    </div>
+</div>
+
+<script src="js/server.js"></script>
+<script src="js/plugin.js"></script>
+<script src="js/bookmark.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
