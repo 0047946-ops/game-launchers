@@ -1,44 +1,222 @@
 package com.idle.lineage.launcher.plugin;
 
+import android.content.Context;
+import android.net.Uri;
+import android.webkit.WebView;
+import android.widget.Toast;
+
+import java.util.ArrayList;
+import java.util.List;
+
+
 public class PluginRuntime {
 
-    public static String buildRuntimeScript() {
 
-        StringBuilder sb = new StringBuilder();
+    private final Context context;
 
-        sb.append("(function(){\n");
+    private final List<String> pluginUrls =
+            new ArrayList<>();
 
-        sb.append("if(window.__NativeApiCheckerLoaded) return;\n");
-        sb.append("window.__NativeApiCheckerLoaded = true;\n");
 
-        sb.append("console.log('[PluginRuntime] 啟動 Save Engine API 狀態檢查...');\n");
+    private final List<String> bookmarkUrls =
+            new ArrayList<>();
 
-        sb.append("var checkCount = 0;\n");
-        sb.append("var timer = setInterval(function(){\n");
-        sb.append(" checkCount++;\n");
 
-        sb.append(" var hasExportSave = typeof window.exportSave === 'function';\n");
-        sb.append(" var hasImportSave = typeof window.importSave === 'function';\n");
-        sb.append(" var hasSaveGame = typeof window.saveGame === 'function';\n");
-        sb.append(" var hasExportPortable = typeof window.exportSavePortable === 'function';\n");
 
-        sb.append(" console.log('[Save Engine Check] exportSave:' + hasExportSave + ");
-        sb.append("' | importSave:' + hasImportSave + ");
-        sb.append("' | saveGame:' + hasSaveGame + ");
-        sb.append("' | exportSavePortable:' + hasExportPortable);\n");
 
-        // 完成條件完全恢復原樣
-        sb.append(" if(hasExportSave && hasImportSave && hasSaveGame){\n");
-        sb.append("  console.log('[PluginRuntime] Save Engine 核心 API Ready');\n");
-        sb.append("  clearInterval(timer);\n");
-        sb.append(" } else if(checkCount >= 10){\n");
-        sb.append("  clearInterval(timer);\n");
-        sb.append(" }\n");
 
-        sb.append("}, 2000);\n");
+    public PluginRuntime(Context context){
 
-        sb.append("})();");
+        this.context = context;
 
-        return sb.toString();
     }
+
+
+
+
+
+    /*
+        新增外掛網址
+
+        玩家自行提供
+    */
+
+    public void addPluginUrl(String url){
+
+
+        if(url == null || url.trim().isEmpty()){
+
+            return;
+
+        }
+
+
+        if(!pluginUrls.contains(url)){
+
+
+            pluginUrls.add(url);
+
+
+        }
+
+
+    }
+
+
+
+
+
+    /*
+        新增書籤腳本網址
+    */
+
+    public void addBookmarkUrl(String url){
+
+
+        if(url == null || url.trim().isEmpty()){
+
+            return;
+
+        }
+
+
+        if(!bookmarkUrls.contains(url)){
+
+
+            bookmarkUrls.add(url);
+
+
+        }
+
+
+    }
+
+
+
+
+
+    /*
+        清除
+    */
+
+    public void clear(){
+
+
+        pluginUrls.clear();
+
+        bookmarkUrls.clear();
+
+
+    }
+
+
+
+
+
+
+    /*
+        注入全部腳本
+    */
+
+    public void inject(WebView webView){
+
+
+
+        for(String url : pluginUrls){
+
+
+            injectScript(
+                    webView,
+                    url
+            );
+
+
+        }
+
+
+
+
+
+        for(String url : bookmarkUrls){
+
+
+            injectScript(
+                    webView,
+                    url
+            );
+
+
+        }
+
+
+    }
+
+
+
+
+
+
+
+    private void injectScript(
+            WebView webView,
+            String url
+    ){
+
+
+
+        String safe =
+                Uri.encode(url);
+
+
+
+        String js =
+
+                "(function(){"
+              + "var s=document.createElement('script');"
+              + "s.src='"+safe+"';"
+              + "s.onload=function(){"
+              + "console.log('[PluginRuntime] loaded');"
+              + "};"
+              + "document.body.appendChild(s);"
+              + "})();";
+
+
+
+        webView.evaluateJavascript(
+                js,
+                null
+        );
+
+
+
+    }
+
+
+
+
+
+
+    public List<String> getPluginUrls(){
+
+
+        return pluginUrls;
+
+
+    }
+
+
+
+
+
+    public List<String> getBookmarkUrls(){
+
+
+        return bookmarkUrls;
+
+
+    }
+
+
+
+
 }
