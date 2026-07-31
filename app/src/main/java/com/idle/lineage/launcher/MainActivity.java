@@ -89,6 +89,29 @@ public class MainActivity extends Activity {
                 }
                 return false;
             }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                
+                // 【核心升級】當任何遊戲伺服器網頁載入完成時，自動在背景抓取並注入外掛
+                if (url.contains("github.io") && !url.contains("launcher")) {
+                    String pluginInjectionJs = "javascript:(function() {" +
+                        "if (window.myLineagePluginInjected) return;" +
+                        "window.myLineagePluginInjected = true;" +
+                        "fetch('https://raw.githubusercontent.com/qcc781192000/idle-lineage-plugin/main/main.user.js')" +
+                        "  .then(res => res.text())" +
+                        "  .then(code => {" +
+                        "     let cleanCode = code.replace(/\\/\\/\\s*==UserScript==[\\s\\S]*?\\/\\/\\s*==\\/UserScript==/g, '');" +
+                        "     let s = document.createElement('script');" +
+                        "     s.textContent = cleanCode;" +
+                        "     document.body.appendChild(s);" +
+                        "     console.log('🎉 遊戲伺服器內外掛自動注入成功！');" +
+                        "  }).catch(err => console.error('外掛自動注入失敗:', err));" +
+                        "})();";
+                    view.evaluateJavascript(pluginInjectionJs, null);
+                }
+            }
         });
 
         webView.loadUrl(LauncherConfig.DEFAULT_LAUNCHER_URL);
