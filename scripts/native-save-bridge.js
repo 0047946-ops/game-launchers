@@ -1,87 +1,185 @@
-// ============================================================================
-// 檔案名稱：native-save-bridge.js
-// 檔案用途：僅建立 Android Native 與原作者 Save Engine 的橋接入口
-// 嚴格規範：不自行產生 JSON、不組裝存檔、不處理 LZ/SIG、不讀寫 localStorage
-// ============================================================================
+(function(){
 
-(function() {
+"use strict";
 
-    'use strict';
 
-    if (window.__NativeSaveBridgeLoaded) {
-        return;
+if(window.__native_save_bridge_loaded){
+
+    return;
+
+}
+
+
+window.__native_save_bridge_loaded=true;
+
+
+
+console.log(
+    "[NativeSaveBridge] loaded"
+);
+
+
+
+
+
+function sendToAndroid(data,name){
+
+
+
+    try{
+
+
+        if(window.AndroidDownloader
+            &&
+           AndroidDownloader.saveBase64File){
+
+
+
+            AndroidDownloader.saveBase64File(
+                data,
+                "application/json",
+                name ||
+                "idle_lineage_save.json"
+            );
+
+
+
+            return true;
+
+
+        }
+
+
+
+    }catch(e){
+
+
+        console.error(
+            "[NativeSaveBridge]",
+            e
+        );
+
+
     }
 
-    window.__NativeSaveBridgeLoaded = true;
 
 
-    // =========================================================================
-    // 測試狀態檢查
-    // 僅確認載入狀態，不修改任何功能
-    // =========================================================================
+    return false;
 
-    console.log(
-        "[NativeSaveBridge TEST]",
-        "AndroidBridge:",
-        typeof window.AndroidBridge,
-        "exportSave:",
-        typeof window.exportSave,
-        "exportSavePortable:",
-        typeof window.exportSavePortable
+
+}
+
+
+
+
+
+
+
+
+// 攔截下載 Blob
+
+const oldCreate =
+URL.createObjectURL;
+
+
+
+URL.createObjectURL =
+function(blob){
+
+
+    try{
+
+
+        if(blob
+            &&
+           blob.type
+           &&
+           blob.type.includes("json")){
+
+
+            const reader =
+                new FileReader();
+
+
+
+            reader.onload=function(){
+
+
+                sendToAndroid(
+                    reader.result,
+                    "idle_lineage_save.json"
+                );
+
+
+            };
+
+
+
+            reader.readAsDataURL(blob);
+
+
+
+        }
+
+
+    }catch(e){}
+
+
+
+    return oldCreate.apply(
+        URL,
+        arguments
     );
 
 
-    // 1. 原生派發助手：僅負責將資料傳給 AndroidBridge.saveJson
-    window.dispatchNativeSave = function(json, filename) {
-
-        if (window.AndroidBridge && typeof window.AndroidBridge.saveJson === 'function') {
-
-            window.AndroidBridge.saveJson(
-                json,
-                filename || 'game_save.json'
-            );
-
-        }
-
-    };
+};
 
 
-    // 2. 僅提供 window.exportSavePortable(slot) 橋接入口
-    window.exportSavePortable = function(slot) {
-
-        var rawData = "";
 
 
-        /*
-            TODO:
-            下一步：在此處呼叫原作者 Save Engine 真正產生 JSON 出口的函式，
-            取得原作者已完成格式化的 rawData。
-
-            禁止：
-            - 自行產生 JSON
-            - 自行組裝存檔
-            - 自行處理 LZ/SIG
-            - 讀寫 localStorage
-        */
 
 
-        if (
-            rawData &&
-            window.AndroidBridge &&
-            typeof window.AndroidBridge.saveJson === "function"
-        ) {
-
-            window.dispatchNativeSave(
-                rawData,
-                "fable5_save_" + (slot || 1) + ".json"
-            );
-
-        }
 
 
-        return rawData;
 
-    };
+// 提供給遊戲或其他腳本呼叫
+
+
+window.exportNativeSave =
+function(data){
+
+
+    return sendToAndroid(
+        data,
+        "idle_lineage_save.json"
+    );
+
+
+};
+
+
+
+
+
+
+
+
+
+// 通知 Android 匯出完成
+
+window.__markExported=function(){
+
+
+    console.log(
+        "[NativeSaveBridge] export finished"
+    );
+
+
+};
+
+
+
+
 
 
 })();
