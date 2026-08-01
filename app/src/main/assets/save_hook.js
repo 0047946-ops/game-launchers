@@ -1,89 +1,180 @@
-(function() {
+(function () {
+
     'use strict';
 
-    if (window.__save_hook_loaded) return;
+
+    if (window.__save_hook_loaded) {
+        return;
+    }
+
     window.__save_hook_loaded = true;
 
 
-    console.log("🚀 SaveHook loaded");
+    console.log(
+        "🚀 APK SaveHook 啟動"
+    );
 
 
-    function sendToAndroid(data, name) {
+
+    function sendToAndroid(
+        data,
+        fileName
+    ) {
+
 
         try {
+
+
+            if (!data) {
+
+                console.warn(
+                    "Save data empty"
+                );
+
+                return;
+
+            }
+
+
 
             if (
                 window.AndroidBridge &&
                 typeof window.AndroidBridge.saveBase64File === "function"
             ) {
 
+
                 console.log(
-                    "📤 send save",
-                    name,
+                    "📤 傳送 Android:",
+                    fileName,
                     data.length
                 );
 
 
+
+                // 固定三參數
+
                 window.AndroidBridge.saveBase64File(
                     data,
                     "application/json",
-                    name || "idle_lineage_save.json"
+                    fileName ||
+                    "idle_lineage_save.json"
                 );
 
-                return true;
+
+
+                console.log(
+                    "✅ AndroidBridge 呼叫完成"
+                );
+
+
+            }
+            else {
+
+
+                console.warn(
+                    "❌ 找不到 AndroidBridge"
+                );
+
+
             }
 
 
-            console.warn(
-                "AndroidBridge missing"
-            );
 
+        }
+        catch(e) {
 
-        } catch(e) {
 
             console.error(
+                "AndroidBridge error",
                 e
             );
+
 
         }
 
 
-        return false;
-
     }
 
 
 
 
 
-    function blobToBase64(blob,name){
-
-        const reader = new FileReader();
 
 
-        reader.onloadend=function(){
-
-            let result =
-                reader.result;
-
-
-            if(result.includes(",")){
-                result =
-                result.substring(
-                    result.indexOf(",")+1
-                );
-            }
+    function blobToBase64(
+        blob,
+        fileName
+    ) {
 
 
-            sendToAndroid(
-                result,
-                name
+        try {
+
+
+            console.log(
+                "📦 Blob:",
+                blob.type,
+                blob.size
             );
 
-        };
 
 
-        reader.readAsDataURL(blob);
+            const reader =
+                new FileReader();
+
+
+
+            reader.onloadend =
+            function () {
+
+
+                let result =
+                    reader.result;
+
+
+
+                if (
+                    result &&
+                    result.indexOf(",") >= 0
+                ) {
+
+
+                    result =
+                    result.substring(
+                        result.indexOf(",") + 1
+                    );
+
+
+                }
+
+
+
+                sendToAndroid(
+                    result,
+                    fileName
+                );
+
+
+            };
+
+
+
+            reader.readAsDataURL(
+                blob
+            );
+
+
+        }
+        catch(e) {
+
+
+            console.error(
+                "Blob convert error",
+                e
+            );
+
+
+        }
+
 
     }
 
@@ -91,53 +182,77 @@
 
 
 
-    const oldCreate =
+
+
+
+    // ==================================================
+    // 1. 攔截 URL.createObjectURL
+    // ==================================================
+
+
+    const oldCreateObjectURL =
         URL.createObjectURL;
 
 
 
     URL.createObjectURL =
-    function(blob){
+    function(blob) {
 
 
         const url =
-        oldCreate.apply(
-            URL,
-            arguments
-        );
+            oldCreateObjectURL.apply(
+                URL,
+                arguments
+            );
+
 
 
         try {
 
-            if(blob instanceof Blob){
+
+            if (
+                blob instanceof Blob
+            ) {
+
+
 
                 console.log(
-                    "Blob:",
+                    "📦 createObjectURL",
                     blob.type,
                     blob.size
                 );
 
 
-                if(
+
+                if (
                     blob.type.includes("json") ||
                     blob.size > 100
-                ){
+                ) {
+
 
                     blobToBase64(
                         blob,
                         "idle_lineage_save.json"
                     );
 
+
                 }
+
 
             }
 
 
-        }catch(e){}
+        }
+        catch(e) {
+
+
+
+        }
 
 
 
         return url;
+
 
     };
 
@@ -147,58 +262,243 @@
 
 
 
+
+
+    // ==================================================
+    // 2. 攔截 <a download>
+    // ==================================================
+
+
     document.addEventListener(
         "click",
-        function(e){
-
-
-            const a =
-            e.target.closest &&
-            e.target.closest(
-                "a[download]"
-            );
-
-
-            if(!a) return;
+        function(e) {
 
 
 
-            if(
-                a.href.startsWith("blob:")
-            ){
+            try {
+
+
+
+                const a =
+                    e.target.closest &&
+                    e.target.closest(
+                        "a[download]"
+                    );
+
+
+
+                if (!a) {
+
+                    return;
+
+                }
+
+
+
 
                 console.log(
-                    "capture download",
-                    a.download
+                    "⬇️ 捕捉下載",
+                    a.download,
+                    a.href
                 );
 
 
-                e.preventDefault();
 
 
-                fetch(a.href)
 
-                .then(
-                    r=>r.blob()
-                )
+                if (
+                    a.href &&
+                    a.href.startsWith("blob:")
+                ) {
 
-                .then(
-                    blob=>{
 
-                        blobToBase64(
-                            blob,
-                            a.download ||
-                            "idle_lineage_save.json"
-                        );
 
-                    }
+                    e.preventDefault();
+
+
+
+                    fetch(
+                        a.href
+                    )
+
+                    .then(
+                        function(r){
+
+                            return r.blob();
+
+                        }
+                    )
+
+                    .then(
+                        function(blob){
+
+
+                            blobToBase64(
+                                blob,
+                                a.download ||
+                                "idle_lineage_save.json"
+                            );
+
+
+                        }
+                    );
+
+
+                }
+
+
+
+                else if (
+                    a.href &&
+                    a.href.startsWith("data:")
+                ) {
+
+
+
+                    e.preventDefault();
+
+
+
+                    sendToAndroid(
+                        a.href.split(",")[1],
+                        a.download ||
+                        "idle_lineage_save.json"
+                    );
+
+
+                }
+
+
+
+            }
+            catch(err) {
+
+
+                console.error(
+                    "download hook error",
+                    err
                 );
+
 
             }
 
 
         },
         true
+    );
+
+
+
+
+
+
+
+
+    // ==================================================
+    // 3. 攔截 window.open
+    // ==================================================
+
+
+    const oldOpen =
+        window.open;
+
+
+
+    window.open =
+    function(url) {
+
+
+
+        try {
+
+
+            if (
+                typeof url === "string"
+            ) {
+
+
+
+                if (
+                    url.startsWith("blob:")
+                ) {
+
+
+
+                    fetch(url)
+
+                    .then(
+                        r=>r.blob()
+                    )
+
+                    .then(
+                        blob=>{
+
+                            blobToBase64(
+                                blob,
+                                "idle_lineage_save.json"
+                            );
+
+                        }
+                    );
+
+
+
+                    return null;
+
+
+                }
+
+
+
+
+                if (
+                    url.startsWith("data:")
+                ) {
+
+
+                    sendToAndroid(
+                        url.split(",")[1],
+                        "idle_lineage_save.json"
+                    );
+
+
+                    return null;
+
+
+                }
+
+
+
+            }
+
+
+
+        }
+        catch(e) {
+
+
+
+        }
+
+
+
+        return oldOpen.apply(
+            window,
+            arguments
+        );
+
+
+    };
+
+
+
+
+
+
+
+
+    console.log(
+        "✅ APK SaveHook 完成"
     );
 
 
